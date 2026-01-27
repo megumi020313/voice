@@ -1,0 +1,76 @@
+---
+alwaysApply: false
+globs: ["**/*.py", "backend/**/*.py", "frontend/src/**/*.ts"]
+description: 当编写Python代码或遇到数值常量时，检查并避免使用魔法数字，优先使用有意义的常量定义
+---
+# 魔法数字（Magic Numbers）规范
+
+## 核心原则
+
+**魔法数字**指代码中直接出现的、没有明确解释含义的硬编码数值常量。必须将有业务含义的数字定义为有意义的常量。
+
+### 为什么禁止
+- **降低可读性**：其他开发者不知道数字含义
+- **维护困难**：修改值时需找到所有使用位置
+- **易引入bug**：可能遗漏某些使用位置
+- **业务不清晰**：无法从数字看出业务逻辑
+
+## 规范要求
+
+### ✅ 正确做法：定义常量
+
+```python
+# ✅ 正确：有意义的常量名
+STATUS_COMPLETED = 2
+TAX_RATE = 1.08  # 增值税率 8%
+MAX_RETRY_COUNT = 5
+DEFAULT_TIMEOUT_SECONDS = 30
+
+def calculate_price(quantity):
+    return quantity * TAX_RATE
+
+if status == STATUS_COMPLETED:
+    print("订单已完成")
+
+# ❌ 错误：魔法数字
+def calculate_price(quantity):
+    return quantity * 1.08  # 1.08 是什么？
+
+if status == 2:  # 2 代表什么？
+    print("订单已完成")
+```
+
+## 例外情况
+
+以下情况允许使用数字常量：
+
+- **循环计数**：`for i in range(10):`
+- **基本索引**：`first_item = my_list[0]`
+- **简单数学**：`double = value * 2`，`next_index = index + 1`
+- **标准库常数**：`math.pi`，`math.e`
+- **布尔转换**：`result = 1 if condition else 0`
+
+## 判断标准
+
+- **有业务含义** → 必须定义常量
+- **多处使用** → 必须定义常量
+- **可能变化** → 建议定义常量
+- **难以理解** → 建议定义常量
+
+## 常量命名规范
+
+- 全大写加下划线：`MAX_RETRY_COUNT`
+- 清晰表达含义：`TIMEOUT_SECONDS` 而非 `TIMEOUT`
+- 包含单位：`CACHE_SIZE_MB`、`TIMEOUT_SECONDS`
+
+## 常量定义位置
+
+- 模块顶部：全局常量
+- 类中：类相关常量
+- 避免函数内部（除非局部临时使用）
+
+## 快速检查
+
+编写代码时遇到数字常量时，问自己：
+- 这个数字代表什么业务含义？
+- 如果含义不明确，是否应该定义为常量？

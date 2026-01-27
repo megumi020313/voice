@@ -1,0 +1,74 @@
+---
+description: tools/ 和 tests/ 目录规范、工具分类规则。处理工具或测试代码时使用。
+alwaysApply: false
+---
+# 工具与测试文件夹规范
+
+## tools 文件夹规范
+
+### 目录定位与用途
+- **tools/**：存放开发辅助工具、独立运行的工具脚本和示例代码
+- **特点**：独立运行、可依赖项目模块、不参与核心业务逻辑
+- **与 scripts/ 的区别**：
+  - `scripts/`：项目维护脚本、命令行工具、启动脚本
+  - `tools/`：开发辅助工具、测试工具、示例代码
+
+### 依赖规则
+- ✅ tools 可依赖项目模块（backend, frontend等）
+- ✅ tools 可使用第三方库
+- ❌ 项目模块不可依赖 tools
+
+### 文件命名规范
+- 工具脚本：`<功能名>.py` 或 `<功能名>_tool.py`
+- 示例代码：`<功能名>_example.py`
+- 说明文档：`README_<工具名>.md`
+
+## tests 文件夹规范
+
+### 目录定位与用途
+- **tests/**：存放所有测试代码，包括单元测试、集成测试、测试工具
+- **特点**：独立运行、不参与生产代码、可依赖所有项目模块
+
+### 目录结构
+```
+tests/
+├── unit/              # 单元测试
+├── integration/       # 集成测试
+├── utils/            # 测试工具和辅助函数
+└── scripts/          # 独立测试脚本
+```
+
+### 依赖规则
+- ✅ tests 可依赖所有项目模块
+- ✅ tests 可使用第三方库
+- ❌ 项目模块不可依赖 tests
+
+### 测试工具分类
+- **测试辅助函数**：`tests/utils/test_helpers/`
+- **Mock 对象工厂**：`tests/utils/mock_factory.py`
+- **测试数据加载器**：`tests/utils/fixture_loader.py`
+- **断言辅助函数**：`tests/utils/assertion_helpers.py`
+
+## 工具分类决策树
+
+### 选择 tools/ 还是 scripts/
+- **项目维护脚本** → `scripts/`
+- **命令行工具** → `scripts/`
+- **启动脚本** → `scripts/`
+- **开发辅助工具** → `tools/`
+- **测试工具** → `tools/`
+- **示例代码** → `tools/`
+
+### 选择 tools/ 还是 tests/
+- **生产代码测试** → `tests/`
+- **开发调试工具** → `tools/`
+- **Mock API 服务** → `tools/`
+- **性能检测工具** → `tools/`
+
+## 最佳实践
+
+1. **依赖方向**：`tools → 项目模块`，`tests → 项目模块`
+2. **独立运行**：tools 和 tests 应能独立运行
+3. **文档完善**：重要工具要有 README 文档
+4. **代码质量**：测试代码也要遵循代码规范
+5. **版本控制**：工具和测试代码也纳入版本控制

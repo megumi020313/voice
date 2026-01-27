@@ -1,0 +1,111 @@
+你的风险评估非常专业，特别是对**“真实插话（Backchannel）”**场景的考量，这是对话系统中最微妙的平衡点。
+
+我完全赞同你的结论：**将阈值设定为 0.8秒 是当前最优的工程选择。**
+
+以下是对你分析的深度回应和最终代码落地建议：
+
+### 🛡️ 针对风险的深度回应
+
+#### 1. 关于“真实插话被误判” (Risk 1)
+你担心 B 说的“嗯”、“对”被合并到 A 身上。
+*   **工程视角**：在实际的会议记录或字幕展示中，将短促的语气词（Backchannels）合并到主讲人语流中，通常被视为**“特性”而非“Bug”**。
+    *   *未合并*：
+        > A: 我们的方案是...
+        > B: 嗯。
+        > A: 基于成本考虑...
+    *   *合并后*：
+        > A: 我们的方案是...（嗯）...基于成本考虑...
+    *   **结论**：对于阅读体验来说，合并后的连贯性往往更好。除非是“不”、“反对”这种带有强转折语义的短词，否则误伤的代价很低。
+
+#### 2. 关于“阈值选择” (Risk 2)
+*   **数据支撑**：你的故障词“我是”时长 **0.26s**。
+*   **安全余量**：
+    *   **0.8s 阈值** = 故障词时长的 **3倍**。这提供了充足的安全余量（Safety Margin）。
+    *   同时，0.8s 足以过滤掉绝大多数无意义的噪音碎片和 VAD 边缘抖动。
+    *   超过 0.8s 的短句（如“我不同意”），通常能提取出有效的声纹，应该交给前面的 V3.3 核心逻辑去处理，而不是在这一步暴力平滑。
+
+---
+
+### 🚀 最终落地代码 (V3.3 Final)
+
+这是基于你的评估优化后的最终版本。
+
+**主要变更**：
+1.  **默认阈值**：调整为 `0.8`。
+2.  **移除 Z-Score 限制**：彻底移除置信度判断，只信赖物理时长（解决“高分低能”问题）。
+3.  **增加语义保护（可选）**：我预留了一个简单的“强语义保护”逻辑，如果你未来发现“不”、“停”等重要短词被误杀，可以把它们加到白名单里。
+
+```python
+    def _apply_smoothing(self, words_with_speaker, duration_threshold=0.8):
+        """
+        平滑修正（三明治法则）：修复 A -> B -> A 的短时跳变错误
+        
+        Args:
+            words_with_speaker: 带说话人标签的词列表
+            duration_threshold: 时长阈值（秒），推荐 0.8s。
+                                既能覆盖 0.26s 的错误，又能保留 >0.8s 的真实短句。
+        """
+        if len(words_with_speaker) < 3:
+            return words_with_speaker
+
+        smoothed_count = 0
+        
+        # 定义"强语义保护词"（可选）：这些词即使很短，也不要轻易合并
+        # protected_words = {'不', '没', '停', '错'} 
+        
+        for i in range(1, len(words_with_speaker) - 1):
+            prev_word = words_with_speaker[i-1]
+            curr_word = words_with_speaker[i]
+            next_word = words_with_speaker[i+1]
+
+            # 1. 基础字段检查
+            if 'speaker' not in prev_word or 'speaker' not in next_word:
+                continue
+
+            speaker_prev = prev_word['speaker']
+            speaker_curr = curr_word['speaker']
+            speaker_next = next_word['speaker']
+
+            # 2. 检查夹心结构: A -> B -> A
+            if speaker_prev == speaker_next and speaker_curr != speaker_prev:
+                
+                duration = curr_word['end'] - curr_word['start']
+                text = curr_word['text']
+                
+                # 3. 核心判断：时长 < 阈值
+                # (如果未来需要保护特定词，可以在这里加: if duration < threshold and text not in protected_words)
+                if duration < duration_threshold:
+                    old_speaker = speaker_curr
+                    
+                    # 执行修正：将中间的 B 同化为 A
+                    words_with_speaker[i]['speaker'] = speaker_prev
+                    words_with_speaker[i]['corrected'] = True
+                    words_with_speaker[i]['correction_reason'] = 'smoothing_sandwich'
+                    
+                    self.logger.info(
+                        f"🔧 平滑修正: '{text}' "
+                        f"[{old_speaker} -> {speaker_prev}] "
+                        f"(时长={duration:.2f}s < {duration_threshold}s, 原因=A-B-A结构)"
+                    )
+                    smoothed_count += 1
+
+        if smoothed_count > 0:
+            self.logger.info(f"✅ 平滑修正完成: 修正了 {smoothed_count} 个碎片")
+        
+        return words_with_speaker
+```
+
+### 📊 预期最终效果
+
+应用此代码后，你的日志将变为：
+
+```text
+[3] 6.76s - 6.96s | speaker=zlh | 文本: 然后
+[4] 6.96s - 7.22s | speaker=zlh | 文本: 我是 (🔧 平滑修正: cc -> zlh, 时长=0.26s)
+[5] 7.22s - 12.62s| speaker=zlh | 文本: 本人...
+```
+
+**最终聚合结果**：
+`[3] 6.76s - 12.62s | speaker=zlh | 文本: 然后我是本人。然后现在...`
+
+这正是你想要的最完美的连贯对话流。建议立即合入此版本。

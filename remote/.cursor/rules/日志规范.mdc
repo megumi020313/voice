@@ -1,0 +1,339 @@
+---
+description: 前后端日志管理、异常处理规范，统一日志标准和异常处理机制
+alwaysApply: false
+---
+# 日志规范
+
+## 核心原则
+
+- **分离部署**：前后端在生产环境中分离部署，日志系统完全独立
+- **统一标准**：前后端日志遵循统一的日志级别和格式标准
+- **统一处理**：使用统一的异常处理机制和错误码规范
+- **可追溯性**：日志和异常信息包含足够的上下文信息
+
+## 后端日志管理
+
+### 位置与技术栈
+- **目录**：`backend/utils/logging/` 或 `backend/common/logging/`
+- **技术栈**：Python logging模块
+- **配置**：通过 `backend/config/Config.py` 配置日志级别和输出
+
+### 日志模块设计
+
+```python
+# backend/utils/logging/logger.py
+import logging
+from pathlib import Path
+from logging.handlers import RotatingFileHandler
+
+class Logger:
+    @staticmethod
+    def setup_logger(name: str, log_file: str = None, level: str = 'INFO') -> logging.Logger:
+        """设置日志记录器"""
+        logger = logging.getLogger(name)
+        if logger.handlers:  # 避免重复添加handler
+            return logger
+
+        logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+        # 控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.DEBUG)
+        console_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        console_handler.setFormatter(console_formatter)
+
+        # 文件处理器（可选）
+        if log_file:
+            file_handler = RotatingFileHandler(
+                log_file, maxBytes=10*1024*1024, backupCount=5
+            )
+            file_handler.setLevel(logging.WARNING)
+            file_formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
+            )
+            file_handler.setFormatter(file_formatter)
+            logger.addHandler(file_handler)
+
+        logger.addHandler(console_handler)
+        return logger
+```
+
+### 日志使用规范
+
+```python
+# 在模块中使用
+from backend.utils.logging.logger import Logger
+
+logger = Logger.setup_logger(__name__)
+
+def process_data(data):
+    logger.info(f"开始处理数据: {len(data)} 条")
+    try:
+        # 业务逻辑
+        result = do_something(data)
+        logger.info(f"数据处理完成: {len(result)} 条")
+        return result
+    except Exception as e:
+        logger.error(f"数据处理失败: {str(e)}", exc_info=True)
+        raise
+```
+
+## 后端异常处理规范
+
+### 统一异常处理装饰器
+
+```python
+# backend/common/exception_handler.py
+from functools import wraps
+from flask import current_app, jsonify
+from typing import Callable, Any
+
+class ErrorCode:
+    """错误码定义"""
+    SUCCESS = 200
+    BAD_REQUEST = 400
+    UNAUTHORIZED = 401
+    FORBIDDEN = 403
+    NOT_FOUND = 404
+    INTERNAL_ERROR = 500
+
+    # 业务错误码
+    VALIDATION_ERROR = 1001
+    RESOURCE_NOT_FOUND = 1002
+    PERMISSION_DENIED = 1003
+
+def handle_exceptions(func: Callable) -> Callable:
+    """统一异常处理装饰器"""
+    @wraps(func)
+    def wrapper(*args, **kwargs) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except ValueError as e:
+            current_app.logger.warning(f"参数验证错误: {str(e)}")
+            return jsonify({
+                'code': ErrorCode.VALIDATION_ERROR,
+                'message': '输入参数有误',
+                'detail': str(e)
+            }), 400
+        except PermissionError as e:
+            current_app.logger.warning(f"权限不足: {str(e)}")
+            return jsonify({
+                'code': ErrorCode.PERMISSION_DENIED,
+                'message': '权限不足',
+                'detail': str(e)
+            }), 403
+        except Exception as e:
+            current_app.logger.error(f"系统错误: {str(e)}", exc_info=True)
+            return jsonify({
+                'code': ErrorCode.INTERNAL_ERROR,
+                'message': '系统内部错误',
+                'detail': '请联系管理员'
+            }), 500
+    return wrapper
+```
+
+### 使用示例
+
+```python
+from backend.common.exception_handler import handle_exceptions
+
+@handle_exceptions
+def create_user(user_data):
+    """创建用户"""
+    if not user_data.get('username'):
+        raise ValueError("用户名不能为空")
+
+    # 业务逻辑
+    user = User(**user_data)
+    db.session.add(user)
+    db.session.commit()
+    return user.to_dict()
+```
+
+## 前端日志管理
+
+### 位置与技术栈
+- **目录**：`frontend/src/utils/logger.ts`
+- **技术栈**：console API 或专用日志库
+- **配置**：通过环境变量控制日志级别
+
+### 日志模块设计
+
+```typescript
+// frontend/src/utils/logger.ts
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+class Logger {
+  private level: LogLevel = 'info';
+
+  constructor(level: LogLevel = 'info') {
+    this.level = level;
+  }
+
+  private shouldLog(level: LogLevel): boolean {
+    const levels = ['debug', 'info', 'warn', 'error'];
+    return levels.indexOf(level) >= levels.indexOf(this.level);
+  }
+
+  debug(message: string, ...args: any[]) {
+    if (this.shouldLog('debug')) {
+      console.debug(`[DEBUG] ${message}`, ...args);
+    }
+  }
+
+  info(message: string, ...args: any[]) {
+    if (this.shouldLog('info')) {
+      console.info(`[INFO] ${message}`, ...args);
+    }
+  }
+
+  warn(message: string, ...args: any[]) {
+    if (this.shouldLog('warn')) {
+      console.warn(`[WARN] ${message}`, ...args);
+    }
+  }
+
+  error(message: string, ...args: any[]) {
+    if (this.shouldLog('error')) {
+      console.error(`[ERROR] ${message}`, ...args);
+    }
+  }
+}
+
+export const logger = new Logger(process.env.NODE_ENV === 'development' ? 'debug' : 'warn');
+```
+
+### 日志使用规范
+
+```typescript
+import { logger } from '@/utils/logger';
+
+export default {
+  async fetchData() {
+    try {
+      logger.info('开始获取数据');
+      const response = await api.get('/data');
+      logger.info(`获取数据成功: ${response.data.length} 条`);
+      return response.data;
+    } catch (error) {
+      logger.error('获取数据失败', error);
+      throw error;
+    }
+  }
+};
+```
+
+## 前端异常处理规范
+
+### 全局异常处理
+
+```typescript
+// frontend/src/utils/errorHandler.ts
+import { logger } from './logger';
+
+export class ErrorHandler {
+  static init() {
+    // 全局错误监听
+    window.addEventListener('error', (event) => {
+      logger.error('全局错误', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error
+      });
+    });
+
+    // Promise 错误监听
+    window.addEventListener('unhandledrejection', (event) => {
+      logger.error('未处理的Promise错误', event.reason);
+    });
+  }
+
+  static handleApiError(error: any) {
+    if (error.response) {
+      const { status, data } = error.response;
+      switch (status) {
+        case 400:
+          logger.warn('请求参数错误', data);
+          return '请求参数有误，请检查输入';
+        case 401:
+          logger.warn('未授权访问');
+          return '请先登录';
+        case 403:
+          logger.warn('权限不足');
+          return '您没有权限执行此操作';
+        case 404:
+          logger.warn('资源不存在');
+          return '请求的资源不存在';
+        default:
+          logger.error('API错误', error);
+          return '系统错误，请稍后重试';
+      }
+    } else {
+      logger.error('网络错误', error);
+      return '网络连接失败，请检查网络设置';
+    }
+  }
+}
+```
+
+### 组件级异常处理
+
+```typescript
+// 在组件中使用
+import { ErrorHandler } from '@/utils/errorHandler';
+
+export default {
+  name: 'UserForm',
+  methods: {
+    async submitForm() {
+      try {
+        await this.saveUser(this.formData);
+        this.$message.success('保存成功');
+      } catch (error) {
+        const message = ErrorHandler.handleApiError(error);
+        this.$message.error(message);
+      }
+    }
+  }
+};
+```
+
+## 日志级别规范
+
+### 统一日志级别
+- **DEBUG**：详细调试信息，仅开发环境
+- **INFO**：重要业务信息，如用户操作、系统状态变化
+- **WARN**：警告信息，需要注意但不影响正常运行
+- **ERROR**：错误信息，系统异常或业务逻辑错误
+
+### 使用场景
+- **DEBUG**：变量值、函数调用、循环次数等开发调试信息
+- **INFO**：用户登录、数据保存、重要操作等业务流程信息
+- **WARN**：配置问题、性能警告、即将过期的资源等
+- **ERROR**：异常、失败的操作、系统错误等
+
+## 日志格式规范
+
+### 后端日志格式
+```
+%(asctime)s - %(name)s - %(levelname)s - %(message)s
+2024-01-01 12:00:00,000 - user_service - INFO - 用户登录成功: user_id=123
+```
+
+### 前端日志格式
+```
+[LEVEL] message [additional data]
+[INFO] 用户登录成功 {userId: 123, timestamp: '2024-01-01T12:00:00Z'}
+```
+
+## 最佳实践
+
+1. **日志信息完整性**：包含足够上下文，便于问题排查
+2. **敏感信息保护**：不要记录密码、token等敏感信息
+3. **性能考虑**：避免在循环中记录过多调试日志
+4. **异常处理完善**：使用统一异常处理，避免异常泄露
+5. **用户体验友好**：前端错误提示用户友好，后端详细记录技术细节

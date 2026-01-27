@@ -1,0 +1,230 @@
+---
+description: 前后端数据层和配置管理规范，数据模型、类型定义同步和配置管理
+alwaysApply: false
+---
+# 数据与配置规范
+
+## 核心原则
+
+- **分离部署**：前后端在生产环境中分离部署，代码完全独立
+- **类型同步**：前端TypeScript类型定义与后端数据模型保持同步
+- **API通信**：前端通过API接口访问后端数据
+- **环境变量**：关键配置通过环境变量传递，不硬编码
+
+## 后端数据层
+
+### 位置与技术栈
+- **目录**：`backend/data/`
+- **技术栈**：SQLAlchemy ORM
+- **文件组织**：按业务模块划分，如 `user_models.py`、`procurement_models.py`
+
+### 数据模型定义规范
+
+```python
+# backend/data/user_models.py
+from backend.data import db
+from datetime import datetime
+from enum import Enum
+
+class UserRole(Enum):
+    """用户角色枚举"""
+    ADMIN = "admin"
+    USER = "user"
+    GUEST = "guest"
+
+class User(db.Model):
+    """用户模型"""
+    __tablename__ = 'users'
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    role = db.Column(db.Enum(UserRole), nullable=False, default=UserRole.USER)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self):
+        """转换为字典格式"""
+        return {
+            'id': self.id,
+            'username': self.username,
+            'email': self.email,
+            'role': self.role.value,
+            'created_at': self.created_at.isoformat()
+        }
+```
+
+### 模型命名规范
+- 使用复数形式：`user_models.py`、`procurement_models.py`
+- 一个文件包含一个业务模块的所有模型
+- 枚举类与模型类在同一文件中定义
+
+## 前端数据层
+
+### 位置与技术栈
+- **目录**：`frontend/src/api/types/`
+- **技术栈**：TypeScript接口定义
+- **同步机制**：与后端SQLAlchemy模型保持同步
+
+### 类型定义规范
+
+```typescript
+// frontend/src/api/types/user.ts
+export enum UserRole {
+  ADMIN = 'admin',
+  USER = 'user',
+  GUEST = 'guest'
+}
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  email: string;
+  password: string;
+}
+
+export interface UserResponse {
+  code: number;
+  message: string;
+  data: User;
+}
+```
+
+### 类型同步机制
+- **命名对应**：TypeScript接口名与Python模型类名对应
+- **字段映射**：camelCase（前端） ↔ snake_case（后端）
+- **枚举同步**：Python Enum ↔ TypeScript enum
+- **API响应**：统一响应格式接口
+
+## 后端配置管理
+
+### 位置与技术栈
+- **目录**：`backend/config/`
+- **主文件**：`backend/config/Config.py`
+- **继承**：继承fred-framework的配置基类
+
+### 配置类定义规范
+
+```python
+# backend/config/Config.py
+import os
+from datetime import timedelta
+
+class Config:
+    """应用配置"""
+
+    # 基础配置
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-here')
+
+    # 数据库配置
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        'DATABASE_URL',
+        'sqlite:///data/searchmgt.db'
+    )
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # JWT配置
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'jwt-secret-key')
+    JWT_ACCESS_TOKEN_EXPIRE = timedelta(hours=1)
+
+    # 其他配置
+    DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
+    LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+```
+
+### 配置环境变量
+- **敏感信息**：通过环境变量设置，不硬编码
+- **默认值**：提供合理的开发环境默认值
+- **类型转换**：正确处理字符串到其他类型的转换
+
+## 前端配置管理
+
+### 位置与技术栈
+- **目录**：`frontend/src/config/`
+- **技术栈**：TypeScript + 环境变量
+- **类型安全**：使用TypeScript确保配置类型安全
+
+### 配置定义规范
+
+```typescript
+// frontend/src/config/index.ts
+interface AppConfig {
+  api: {
+    baseURL: string;
+    timeout: number;
+  };
+  app: {
+    title: string;
+    version: string;
+  };
+}
+
+const config: AppConfig = {
+  api: {
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
+    timeout: 10000,
+  },
+  app: {
+    title: '科研管理系统',
+    version: '1.0.0',
+  },
+};
+
+export default config;
+```
+
+### 环境变量管理
+- **Vite环境变量**：使用`VITE_`前缀
+- **类型安全**：接口定义确保配置类型正确
+- **开发/生产**：不同环境使用不同配置
+
+## 数据流规范
+
+### API接口规范
+```typescript
+// frontend/src/api/user.ts
+import axios from 'axios';
+import config from '@/config';
+import { User, CreateUserRequest, UserResponse } from '@/api/types/user';
+
+export const userApi = {
+  async getUsers(): Promise<User[]> {
+    const response = await axios.get(`${config.api.baseURL}/api/users`);
+    return response.data.data;
+  },
+
+  async createUser(data: CreateUserRequest): Promise<User> {
+    const response = await axios.post<UserResponse>(
+      `${config.api.baseURL}/api/users`,
+      data
+    );
+    return response.data.data;
+  },
+
+  async getUser(id: number): Promise<User> {
+    const response = await axios.get<UserResponse>(
+      `${config.api.baseURL}/api/users/${id}`
+    );
+    return response.data.data;
+  },
+};
+```
+
+### 数据转换层
+- **后端**：模型的`to_dict()`方法
+- **前端**：API响应数据转换
+- **格式统一**：日期格式、枚举值等保持一致
+
+## 最佳实践
+
+1. **类型同步**：前后端类型定义要及时同步
+2. **环境变量**：敏感配置使用环境变量
+3. **默认值**：提供合理的开发环境默认值
+4. **文档同步**：API接口变更时同步更新类型定义
+5. **测试覆盖**：配置和数据转换要有测试覆盖

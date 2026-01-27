@@ -1,0 +1,48 @@
+---
+description: Python 导入路径规范，绝对路径 vs 相对路径的使用标准。Python 文件导入时使用。
+globs: ["**/*.py", "backend/**/*.py", "tests/**/*.py"]
+alwaysApply: false
+---
+# 导入路径规范
+
+## 核心原则
+
+**必须使用绝对路径**：所有 `from` 导入必须使用完整模块路径开头，禁止使用 `.` 或 `..` 的相对路径。
+
+### ✅ 正确做法
+
+```python
+# 后端模块导入
+from backend.service.procurement_service import ProcurementService
+from backend.controller.procurement_controller import ProcurementController
+from backend.data.procurement_models import ProcurementApply
+from backend.utils.datetime_utils import format_date
+from backend.common.permission import PermissionValidator
+
+# 测试代码导入
+from backend.service.procurement_service import ProcurementService
+from tests.test_services_simple import TestProcurementApprovalService
+```
+
+### ❌ 错误做法
+
+```python
+# 相对路径导入（禁止）
+from .service import ProcurementService
+from ..controller import ProcurementController
+from .test_helpers import mock_factory
+```
+
+## 原因说明
+
+- **可读性**：绝对路径清晰明了，便于理解模块位置
+- **可维护性**：避免相对路径的导入错误和重构问题
+- **一致性**：统一导入风格，便于代码审查
+- **最佳实践**：符合 Python 标准导入规范
+
+## 快速检查
+
+编写导入语句时，问自己：
+- 这个 `from` 语句是否以 `backend.` 或 `tests.` 开头？
+- 是否使用了 `.` 或 `..` 相对路径？
+

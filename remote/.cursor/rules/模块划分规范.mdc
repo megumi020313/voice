@@ -1,0 +1,429 @@
+---
+description: 详细的模块定位和依赖关系规范，明确utils/common/modules的划分，统一后端模块层级。当创建新模块、进行架构设计或需要模块复用时使用
+alwaysApply: false
+---
+# 模块划分规范
+
+## 核心原则
+
+- **统一层级**：所有后端模块统一在 `backend/` 文件夹下，保持同一层级
+- **职责清晰**：每个模块职责单一，边界明确
+- **依赖明确**：模块间依赖关系清晰，禁止循环依赖
+- **高度复用**：通用功能提取到通用层，避免重复实现
+
+## 后端模块定位（统一在 backend/ 文件夹下）
+
+### 模块结构
+
+```
+backend/
+├── config/          # 配置管理（从根目录config/迁移而来）
+├── data/            # 数据存储访问，持久化层（SQLAlchemy模型，从根目录data/迁移而来）
+├── utils/           # 纯工具函数（新增），无状态，不依赖业务逻辑
+├── common/          # 业务通用组件（从searchmgt/common/迁移而来），多模块复用
+├── modules/         # 完整业务功能组合（从根目录modules/迁移而来，如approval、integration）
+├── scheduler/       # 系统协调管理，运行时任务调度（从根目录scheduler/迁移而来）
+├── controller/      # 控制器层（MVC架构，从searchmgt/controller/迁移而来）
+├── service/         # 服务层（MVC架构，从searchmgt/service/迁移而来）
+└── schema/          # 数据验证层（MVC架构，从searchmgt/schema/迁移而来）
+```
+
+### 模块详细说明
+
+#### 1. backend/utils/ - 纯工具函数
+
+**定位**：纯工具函数，无状态，不依赖业务逻辑，可被任何模块使用
+
+**特点**：
+- ✅ 纯函数，无副作用
+- ✅ 无状态，不依赖全局变量
+- ✅ 不依赖业务逻辑
+- ✅ 可被任何模块导入使用
+- ❌ 不包含业务逻辑
+- ❌ 不依赖数据库
+- ❌ 不依赖配置
+
+**示例**：
+- 日期时间处理：`format_date()`, `parse_datetime()`
+- 字符串处理：`camel_to_snake()`, `sanitize_string()`
+- 数值计算：`round_decimal()`, `calculate_percentage()`
+- 文件操作：`read_json()`, `write_json()`
+
+**使用场景**：
+```python
+# ✅ 正确：纯工具函数
+from backend.utils.datetime_utils import format_date
+from backend.utils.string_utils import camel_to_snake
+
+# ❌ 错误：不应包含业务逻辑
+# from backend.utils.user_utils import validate_user_permission  # 这是业务逻辑，应放在common/
+```
+
+#### 2. backend/common/ - 业务通用组件
+
+**定位**：业务通用组件，多模块复用，包含业务逻辑
+
+**特点**：
+- ✅ 包含业务逻辑
+- ✅ 多模块复用
+- ✅ 可依赖utils、data、config
+- ✅ 可依赖其他common组件
+- ❌ 不应依赖modules（modules可依赖common）
+
+**示例**：
+- 权限验证：`PermissionValidator`, `RoleChecker`
+- 工作流引擎：`WorkflowEngine`, `ApprovalWorkflow`
+- 数据验证：`BusinessRuleValidator`
+- 通用服务：`NotificationService`, `AuditService`
+
+**使用场景**：
+```python
+# ✅ 正确：业务通用组件
+from backend.common.permission import PermissionValidator
+from backend.common.workflow import ApprovalWorkflow
+
+# ❌ 错误：不应是纯工具函数
+# from backend.common.string_utils import format_date  # 这是工具函数，应放在utils/
+```
+
+#### 3. backend/data/ - 数据存储访问
+
+**定位**：数据存储访问，持久化层（SQLAlchemy模型）
+
+**特点**：
+- ✅ SQLAlchemy模型定义
+- ✅ 数据库操作封装
+- ✅ 可被service、modules、scheduler使用
+- ❌ 不应包含业务逻辑
+- ❌ 不应依赖service、modules
+
+**示例**：
+- 数据模型：`User`, `ProcurementApply`, `Asset`
+- 数据库操作：`db.session`, `db.query`
+
+**使用场景**：
+```python
+# ✅ 正确：数据模型
+from backend.data.user_models import User
+from backend.data.procurement_models import ProcurementApply
+
+# ❌ 错误：不应包含业务逻辑
+# from backend.data.user_service import UserService  # 这是业务逻辑，应放在service/
+```
+
+#### 4. backend/modules/ - 完整业务功能组合
+
+**定位**：完整业务功能组合，独立可运行
+
+**特点**：
+- ✅ 完整业务功能
+- ✅ 独立可运行
+- ✅ 可依赖data、common、utils
+- ✅ 可被scheduler使用
+- ❌ 不应依赖其他modules（避免循环依赖）
+
+**示例**：
+- 审批模块：`modules/approval/`
+- 集成模块：`modules/integration/`
+- 财务模块：`modules/finance/`
+
+**使用场景**：
+```python
+# ✅ 正确：业务模块
+from backend.modules.approval.approval_workflow_service import ApprovalWorkflowService
+from backend.modules.integration.circuit_breaker_service import CircuitBreakerService
+```
+
+#### 5. backend/scheduler/ - 系统协调管理
+
+**定位**：系统协调管理，运行时任务调度
+
+**特点**：
+- ✅ 定时任务定义
+- ✅ 系统级任务调度
+- ✅ 可依赖modules、data、common、utils
+- ❌ 不应被其他模块依赖（除了tests）
+
+**示例**：
+- 定时任务：`sync_assets_daily()`, `cleanup_expired_sessions()`
+
+#### 6. backend/config/ - 配置管理
+
+**定位**：配置管理，继承fred-framework配置
+
+**特点**：
+- ✅ 应用配置
+- ✅ 环境变量管理
+- ✅ 可被所有模块使用
+- ❌ 不应包含业务逻辑
+
+#### 7. backend/controller/ - 控制器层
+
+**定位**：处理HTTP请求和路由（MVC架构）
+
+**特点**：
+- ✅ 路由注册
+- ✅ 请求参数验证
+- ✅ 调用service层
+- ❌ 不应包含业务逻辑
+- ❌ 不应直接操作数据库
+
+#### 8. backend/service/ - 服务层
+
+**定位**：业务逻辑处理（MVC架构）
+
+**特点**：
+- ✅ 业务逻辑实现
+- ✅ 调用data层
+- ✅ 可依赖common、modules、utils
+- ❌ 不应直接处理HTTP请求
+
+#### 9. backend/schema/ - 数据验证层
+
+**定位**：数据验证（MVC架构）
+
+**特点**：
+- ✅ 请求参数验证
+- ✅ 响应数据格式化
+- ✅ 使用Marshmallow
+- ❌ 不应包含业务逻辑
+
+### 保留在根目录的模块
+
+#### scripts/ - 命令行入口
+
+**定位**：命令行入口，参数解析和维护脚本
+
+**特点**：
+- ✅ 项目维护脚本
+- ✅ 数据库初始化
+- ✅ 用户管理
+- ✅ 可依赖backend模块
+
+#### tests/ - 测试代码
+
+**定位**：测试代码，包括单元测试、集成测试、测试工具
+
+**特点**：
+- ✅ 可依赖所有backend模块
+- ✅ 测试工具和辅助函数
+- ❌ 不应被backend模块依赖
+
+## 前端模块定位
+
+### 模块结构
+
+```
+frontend/src/
+├── utils/           # 纯工具函数（对应后端utils）
+├── common/          # 业务通用组件（对应后端common）
+├── config/          # 配置管理（与后端config对应）
+├── api/             # API接口封装
+├── stores/          # 状态管理（Pinia）
+└── components/      # 可复用组件
+```
+
+### 前端模块说明
+
+#### frontend/src/utils/ - 纯工具函数
+
+**定位**：纯工具函数，对应后端utils
+
+**特点**：
+- ✅ 纯函数，无副作用
+- ✅ 无状态
+- ✅ 不依赖业务逻辑
+- ✅ 可被任何模块使用
+
+**示例**：
+- 本地存储：`localGet()`, `localSet()`
+- 格式化：`formatDate()`, `formatCurrency()`
+- 类型判断：`isFunction()`, `isObject()`
+
+#### frontend/src/common/ - 业务通用组件
+
+**定位**：业务通用组件，对应后端common
+
+**特点**：
+- ✅ UI通用组件
+- ✅ 表单验证
+- ✅ 表格组件
+- ✅ 多页面复用
+
+#### frontend/src/config/ - 配置管理
+
+**定位**：客户端配置，与后端config对应
+
+**特点**：
+- ✅ UI主题配置
+- ✅ 路由配置
+- ✅ API地址配置
+- ✅ 独立于后端配置
+
+#### frontend/src/api/ - API接口封装
+
+**定位**：API接口封装，与后端通信
+
+**特点**：
+- ✅ HTTP请求封装
+- ✅ 类型定义（与后端模型同步）
+- ✅ 错误处理
+
+## 依赖关系
+
+### 后端依赖关系图
+
+```
+tests → backend/scheduler → backend/modules → {backend/data, backend/common} → backend/utils
+backend/controller → backend/service → {backend/data, backend/modules, backend/common} → backend/utils
+backend/service → backend/schema
+backend/scheduler → backend/modules → backend/data
+backend/modules → {backend/data, backend/common} → backend/utils
+backend/common → {backend/data, backend/utils}
+backend/data → backend/utils
+```
+
+### 依赖规则
+
+#### ✅ 允许的依赖
+
+1. **tests** 可以依赖所有backend模块
+2. **backend/scheduler** 可以依赖 modules、data、common、utils
+3. **backend/modules** 可以依赖 data、common、utils
+4. **backend/common** 可以依赖 data、utils
+5. **backend/data** 可以依赖 utils
+6. **backend/controller** 可以依赖 service、schema、common、utils
+7. **backend/service** 可以依赖 data、modules、common、schema、utils
+8. **backend/schema** 可以依赖 utils
+
+#### ❌ 禁止的依赖
+
+1. **backend/utils** 不应依赖任何其他模块（纯工具函数）
+2. **backend/data** 不应依赖 service、modules、common（数据层独立）
+3. **backend/common** 不应依赖 modules（避免循环依赖）
+4. **backend/modules** 不应依赖其他 modules（避免循环依赖）
+5. **backend/scheduler** 不应被其他模块依赖（除了tests）
+6. **backend模块** 不应依赖 tests（项目模块不应依赖测试代码）
+
+### 前端依赖关系
+
+```
+frontend/src/components → frontend/src/common → frontend/src/utils
+frontend/src/views → frontend/src/components → frontend/src/api
+frontend/src/stores → frontend/src/api
+frontend/src/api → (后端服务)
+```
+
+## Utils vs Common vs Modules 区分
+
+### Utils（纯工具函数）
+
+**判断标准**：
+- 无业务逻辑
+- 无状态
+- 可被任何语言/框架使用
+- 功能通用，不特定于业务
+
+**示例**：
+```python
+# ✅ Utils
+def format_date(date: datetime, format_str: str) -> str:
+    """格式化日期"""
+    return date.strftime(format_str)
+
+def camel_to_snake(name: str) -> str:
+    """驼峰转蛇形"""
+    import re
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+```
+
+### Common（业务通用组件）
+
+**判断标准**：
+- 包含业务逻辑
+- 多模块复用
+- 特定于业务领域
+- 可依赖数据模型
+
+**示例**：
+```python
+# ✅ Common
+class PermissionValidator:
+    """权限验证器"""
+    def validate(self, user: User, resource: str, action: str) -> bool:
+        # 业务逻辑：验证用户权限
+        pass
+
+class ApprovalWorkflow:
+    """审批工作流"""
+    def process(self, apply: ProcurementApply) -> bool:
+        # 业务逻辑：处理审批流程
+        pass
+```
+
+### Modules（完整业务功能）
+
+**判断标准**：
+- 完整业务功能
+- 独立可运行
+- 包含完整的业务逻辑
+- 可被其他系统调用
+
+**示例**：
+```python
+# ✅ Modules
+class ApprovalWorkflowService:
+    """审批工作流服务"""
+    def create_workflow(self, apply_id: int) -> Workflow:
+        # 完整业务功能：创建审批工作流
+        pass
+```
+
+## 使用场景说明
+
+### 场景1：创建新的工具函数
+
+**需求**：需要创建一个日期格式化函数
+
+**选择**：`backend/utils/datetime_utils.py`
+
+**原因**：纯工具函数，无业务逻辑，可被任何模块使用
+
+### 场景2：创建权限验证功能
+
+**需求**：需要创建一个权限验证器，多个模块都会使用
+
+**选择**：`backend/common/permission.py`
+
+**原因**：包含业务逻辑，多模块复用
+
+### 场景3：创建审批工作流模块
+
+**需求**：需要创建一个完整的审批工作流功能
+
+**选择**：`backend/modules/approval/`
+
+**原因**：完整业务功能，独立可运行
+
+### 场景4：创建数据模型
+
+**需求**：需要创建用户数据模型
+
+**选择**：`backend/data/user_models.py`
+
+**原因**：数据存储访问，持久化层
+
+## 最佳实践
+
+1. **优先使用现有模块**：在创建新功能前，先检查是否有可复用的模块
+2. **避免重复实现**：相同功能不应在多个地方实现
+3. **保持模块独立**：模块间应尽量减少依赖
+4. **明确模块边界**：每个模块职责单一，边界明确
+5. **遵循依赖规则**：严格按照依赖关系图组织代码
+
+## 相关规范
+
+- [导入路径规范](导入路径规范.mdc) - 导入路径使用规范
+- [数据层共用规范](数据层共用规范.mdc) - 前后端数据层规范
+- [配置管理规范](配置管理规范.mdc) - 前后端配置管理规范
+- [日志管理规范](日志管理规范.mdc) - 前后端日志管理规范

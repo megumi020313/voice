@@ -1,0 +1,122 @@
+---
+description: Conda 环境、PowerShell 编码、Python 输出编码处理规范
+alwaysApply: false
+globs: ["**/*.py", "scripts/**"]
+---
+# 终端环境与编码处理规范
+
+## 终端环境要求
+
+### Conda 环境激活
+- **PowerShell 中运行任何项目命令前，必须激活 `conda` 环境 `fredpip`**
+  - 打开终端后执行：`conda activate fredpip`
+  - 若终端提示已位于 `fredpip` 环境，可直接继续；否则禁止在未激活状态下运行脚本或服务
+
+### PowerShell 命令执行规则
+- **PowerShell 不支持 `&&` 操作符**，不能使用 `&&` 连接多个命令
+- ❌ **错误示例**：`conda activate fredpip && python run.py`
+- ✅ **正确做法**：分开执行命令
+  1. 先执行：`conda activate fredpip`
+  2. 再执行：`python run.py`
+- 如果需要连续执行多个命令，使用 PowerShell 的分号 `;` 或换行分隔，但注意 `conda activate` 需要在同一 shell 会话中执行
+
+## PowerShell 编码问题处理
+
+### 问题原因
+Windows PowerShell 默认使用 GBK/GB2312 编码，当文件名包含中文字符时，如果系统编码与文件系统编码不一致，就会出现乱码
+
+### 解决方案
+1. **优先使用 Python 脚本**：使用 Python 处理文件操作，Python 默认使用 UTF-8 编码，可正确处理中文文件名
+2. **避免直接使用 PowerShell 重命名中文文件**：不要使用 `Move-Item` 或 `Rename-Item` 直接重命名包含中文的文件
+3. **使用项目提供的工具**：
+   - 函数库：`src/utils/file/rename_ops.py` 提供 `rename_file()`、`batch_rename()` 等函数
+   - 命令行工具：`scripts/rename_files.py` 提供批量重命名功能
+4. **如果必须使用 PowerShell**：
+   - 设置输出编码：`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
+   - 使用 `-Encoding UTF8` 参数（如果命令支持）
+   - 但建议仍优先使用 Python 脚本
+
+### 示例
+```python
+# 使用 Python 脚本重命名文件
+from src.utils.file.rename_ops import rename_file
+rename_file("旧文件名.md", "新文件名.md")
+
+# 或使用命令行工具
+# python scripts/rename_files.py --dir docs/development --mapping "old.md:new.md"
+```
+
+## Python 程序输出编码处理（Windows 环境）
+
+### 问题原因
+- Windows 环境下，Python 程序的 `sys.stdout` 和 `sys.stderr` 默认使用系统编码（通常是 GBK/GB2312）
+- 当输出包含 emoji、特殊 Unicode 字符或中文时，可能出现 `UnicodeEncodeError: 'gbk' codec can't encode character`
+- 子进程的输出流也可能使用系统默认编码，导致编码错误
+
+### 解决方案
+
+#### 1. 在程序开头设置输出编码（推荐）
+```python
+# Windows 编码兼容性：设置输出编码为 UTF-8
+if sys.platform == "win32":
+    try:
+        # 尝试设置控制台编码为 UTF-8
+        import io
+        if hasattr(sys.stdout, 'buffer'):
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'buffer'):
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    except (AttributeError, OSError):
+        # 如果失败，使用环境变量
+        os.environ['PYTHONIOENCODING'] = 'utf-8'
+    # 设置环境变量确保子进程也使用 UTF-8
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    os.environ['PYTHONUTF8'] = '1'  # Python 3.7+ 支持
+```
+
+#### 2. 启动子进程时传递 UTF-8 环境变量
+```python
+# 设置环境变量确保子进程使用 UTF-8 编码
+env = os.environ.copy()
+env['PYTHONIOENCODING'] = 'utf-8'
+env['PYTHONUTF8'] = '1'
+
+proc = subprocess.Popen(
+    command,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+    encoding="utf-8",
+    errors="replace",
+    env=env,  # 传递环境变量
+)
+```
+
+#### 3. 在日志输出中处理编码错误
+```python
+# 使用 errors='replace' 处理编码错误
+try:
+    print(f"[{prefix}] {line_stripped}", flush=True)
+except UnicodeEncodeError:
+    # 如果终端不支持 UTF-8，使用 ASCII 替代
+    safe_line = line_stripped.encode('ascii', errors='replace').decode('ascii')
+    print(f"[{prefix}] {safe_line}", flush=True)
+```
+
+### 适用场景
+- ✅ 所有包含 emoji 或特殊字符的 `print()` 语句
+- ✅ 所有启动子进程的代码（`subprocess.Popen`、`subprocess.run` 等）
+- ✅ 所有日志输出代码
+- ✅ 所有可能被其他程序调用的脚本（如 `start_system.py`）
+
+### 检查方法
+- 搜索代码中的 `print()` 语句，检查是否包含 emoji 或特殊字符
+- 搜索 `subprocess.Popen` 或 `subprocess.run`，检查是否传递了 `env` 参数
+- 在 Windows 环境下测试，确保不会出现 `UnicodeEncodeError`
+
+### 最佳实践
+1. **所有 Python 脚本开头都应设置编码**（特别是可能包含 emoji 的脚本）
+2. **所有启动子进程的代码都应传递 UTF-8 环境变量**
+3. **所有日志输出都应使用 `errors='replace'` 处理编码错误**
+4. **优先使用 UTF-8 编码，避免使用系统默认编码**
+

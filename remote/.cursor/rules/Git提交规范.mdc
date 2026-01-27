@@ -1,0 +1,384 @@
+---
+description: Git 提交信息格式、版本号管理、约定式提交规范。进行 Git 提交时使用。
+alwaysApply: false
+---
+# Git 提交规范
+
+## 核心原则
+- **UTF-8 编码**：提交信息必须使用 UTF-8 编码
+- **版本号管理**：提交前检查最新标签，确保版本递增
+- **约定式提交**：遵循 Conventional Commits 规范
+
+## 提交信息格式
+
+### 基本格式
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+### 提交类型
+- **feat**: 新功能
+- **fix**: 修复bug
+- **docs**: 文档更新
+- **style**: 代码格式调整
+- **refactor**: 代码重构
+- **test**: 测试相关
+- **chore**: 构建/工具更新
+
+### 示例
+```
+feat(auth): 添加用户登录功能
+
+- 实现JWT认证
+- 添加密码加密
+- 集成用户数据库
+
+Closes #123
+```
+
+## Windows 环境处理
+
+### 推荐方法：使用项目脚本
+```bash
+# 使用统一提交工具
+python scripts/git_commit_utf8.py commit "fix(alpha-1.0): 修复登录问题" -m "详细描述" -f "docs/changelog/CHANGLOG-20251216-202157.md"
+```
+
+## 版本号管理
+```python
+# 创建 Python 脚本处理提交
+import os
+import subprocess
+
+# 设置环境变量确保 UTF-8 编码
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+os.environ['LANG'] = 'zh_CN.UTF-8'
+os.environ['LC_ALL'] = 'zh_CN.UTF-8'
+
+# 提交信息
+commit_msg = """fix(alpha-0.17.3.3): 修复多个文件中的 Python 缩进错误
+
+- 修复 src/core/frame_pool_manager.py 中 else 块的缩进错误
+- 修复 src/cli/main.py 中 try 块的缩进错误
+- 修复 src/modules/monitoring/snapshot_writer.py 中 try 块的缩进错误
+- 新增推理结果缓存机制分析文档
+- 更新 CHANGELOG.md 记录本次修复
+
+相关变更日志: docs/changelog/CHANGLOG-20251126-140806.md"""
+
+# 写入临时文件（使用 UTF-8 编码）
+with open('commit_msg_utf8.txt', 'wb') as f:
+    f.write(commit_msg.encode('utf-8'))
+
+# 使用 -F 参数读取文件进行提交
+subprocess.run(['git', 'commit', '-F', 'commit_msg_utf8.txt'], env=os.environ)
+
+# 清理临时文件
+os.remove('commit_msg_utf8.txt')
+```
+
+#### 方法3：配置 Git 编码设置
+```bash
+# 设置 Git 提交编码为 UTF-8
+git config --local i18n.commitencoding utf-8
+git config --local core.quotepath false
+
+# 设置 PowerShell 代码页为 UTF-8
+chcp 65001
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+```
+
+#### 方法4：使用 Git GUI 工具
+- 使用支持 UTF-8 的 Git GUI 工具（如 SourceTree、GitKraken）进行提交
+- 这些工具通常能正确处理中文编码
+
+## 提交信息格式规范
+
+### 基本格式
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+### Type 类型
+- **feat**: 新功能
+- **fix**: 修复 Bug
+- **docs**: 文档更新
+- **style**: 代码格式调整（不影响功能）
+- **refactor**: 代码重构
+- **perf**: 性能优化
+- **test**: 测试相关
+- **chore**: 构建过程或辅助工具的变动
+- **ci**: CI 配置变更
+
+### Scope 范围（可选）
+- 模块名称：`core`、`modules`、`utils`、`common`、`cli` 等
+- 版本号：`alpha-0.17.3.3`（用于标记版本）
+
+### Subject 主题
+- 使用中文描述，简洁明了
+- 不超过 50 个字符
+- 首字母小写，结尾不加句号
+
+### Body 正文（可选）
+- 详细描述变更内容
+- 使用中文，每行不超过 72 个字符
+- 使用列表格式说明具体修改点
+
+### Footer 页脚（可选）
+- 相关文档链接
+- 相关问题编号
+- Breaking Changes 说明
+
+## 版本号管理规范
+
+### 版本号格式
+- **格式**：`alpha-X.Y`（当前项目使用简化格式）
+- **示例**：`alpha-1.0`（当前为空仓库，初始版本为 alpha-1.0）
+- **规则**：
+  - `X`: 主版本号（重大变更）
+  - `Y`: 次版本号（新功能、Bug修复、小修复）
+- **代码仓库**：http://ficgit.vshowdo.com/fic/public/voicesys.git
+
+### 版本号检查流程
+1. **检查现有标签**：
+   ```bash
+   git tag --list | Select-String "alpha-0.17.3"
+   ```
+
+2. **确定下一个版本号**：
+   - 如果最新标签是 `alpha-1.0`，下一个可能是 `alpha-1.1`（新功能）或 `alpha-1.0.1`（修复）
+   - 当前为空仓库，初始版本为 `alpha-1.0`
+   - 确保版本号递增且不重复
+
+3. **在提交信息中使用版本号**：
+   ```
+   fix(alpha-1.0): 修复多个文件中的问题
+   feat(alpha-1.1): 新增功能
+   ```
+
+## 提交前检查清单
+
+### 1. 编码检查
+- ✅ 确保提交信息使用 UTF-8 编码
+- ✅ 使用 Python 脚本或提交信息文件进行提交
+- ✅ 验证提交信息中文显示正常
+
+### 2. 版本号检查
+- ✅ 检查当前分支的最新标签
+- ✅ 确定正确的版本号（递增且不重复）
+- ✅ 在提交信息中包含版本号
+
+### 3. 变更日志检查
+- ✅ 创建或更新 `docs/changelog/CHANGLOG-YYYYMMDD-HHMMSS.md`
+- ✅ 更新全局 `CHANGELOG.md`
+- ✅ 确保变更日志中的版本号与提交信息一致
+
+### 4. 文件检查
+- ✅ 检查是否有未提交的更改：`git status`
+- ✅ 检查文件编码是否正确
+- ✅ 确保没有临时文件被提交
+
+## 常见问题处理
+
+### 问题1：提交信息出现乱码
+**症状**：`git log` 显示提交信息为乱码
+
+**解决方案**：
+1. 使用 `git commit --amend` 重新提交
+2. 使用 Python 脚本创建 UTF-8 编码的提交信息文件
+3. 使用 `-F` 参数读取文件进行提交
+
+### 问题2：版本号重复
+**症状**：提交时使用了已存在的版本号
+
+**解决方案**：
+1. 检查现有标签：`git tag --list`
+2. 确定下一个正确的版本号
+3. 使用 `git commit --amend` 修改提交信息
+
+### 问题3：PowerShell 显示乱码但 Git 存储正确
+**症状**：`git log` 显示乱码，但 `git show` 内容正确
+
+**根本原因**：
+- Git 存储使用 UTF-8 编码，存储是正确的
+- PowerShell 默认使用 GBK/GB2312 编码显示，导致中文显示为乱码
+- 这是 PowerShell 显示问题，不是 Git 存储问题
+
+**解决方案**：
+1. **验证 Git 存储是否正确**：
+   ```bash
+   # 使用 git show 验证（通常显示正确）
+   git show --format=%B --no-patch HEAD
+   
+   # 或导出到文件验证
+   git log -1 --format=%B | Out-File -Encoding utf8 test.txt
+   python -c "with open('test.txt', 'rb') as f: print(f.read().decode('utf-8'))"
+   ```
+
+2. **设置 PowerShell 编码**（仅影响显示，不影响存储）：
+   ```powershell
+   chcp 65001
+   [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+   ```
+
+3. **使用 git show 查看**（通常显示正确）：
+   ```bash
+   git show --format=%B --no-patch HEAD
+   ```
+
+**重要说明**：
+- ✅ Git 存储是正确的（UTF-8 编码）
+- ⚠️ PowerShell 显示乱码是显示问题，不影响 Git 存储
+- ✅ 在 Git 仓库的 Web 界面中，中文提交信息会正常显示
+- ✅ 推送到远端后，Web 界面会正确显示中文
+
+### 问题4：提交信息已乱码，需要修正
+**症状**：提交信息在 Git 中存储时就是乱码（不是显示问题），`git show` 也显示乱码
+
+**解决方案**：
+1. **使用统一提交工具脚本修正（推荐）**：
+   ```bash
+   # 修正当前提交信息
+   python scripts/git_commit_utf8.py amend "fix(alpha-0.17.3.22): 修复 gRPC 日志推送服务状态显示问题" \
+     -m "完善 gRPC 服务统计信息收集逻辑" \
+     -m "优化前端显示逻辑" \
+     -f "相关变更日志: docs/changelog/CHANGLOG-20251127-132605.md"
+   ```
+
+2. **手动使用 Python 脚本修正**：
+   ```python
+   # 创建修正脚本 fix_commit_encoding.py
+   import os
+   import subprocess
+   
+   # 设置环境变量确保 UTF-8 编码
+   os.environ['PYTHONIOENCODING'] = 'utf-8'
+   os.environ['LANG'] = 'zh_CN.UTF-8'
+   os.environ['LC_ALL'] = 'zh_CN.UTF-8'
+   
+   # 正确的提交信息（UTF-8 编码）
+   commit_msg = """fix(alpha-0.17.3.22): 修复 gRPC 日志推送服务状态显示问题
+   
+   - 完善 gRPC 服务统计信息收集逻辑
+   - 优化前端显示逻辑
+   
+   相关变更日志: docs/changelog/CHANGLOG-20251127-132605.md"""
+   
+   # 写入临时文件（使用 UTF-8 编码）
+   with open('commit_msg_utf8.txt', 'wb') as f:
+       f.write(commit_msg.encode('utf-8'))
+   
+   # 使用 -F 参数读取文件进行提交修正
+   subprocess.run(
+       ['git', 'commit', '--amend', '-F', 'commit_msg_utf8.txt'],
+       env=os.environ
+   )
+   
+   # 清理临时文件
+   os.remove('commit_msg_utf8.txt')
+   ```
+
+3. **修正后重新打标签**：
+   ```bash
+   # 删除旧标签
+   git tag -d alpha-0.17.3.22
+   
+   # 创建新标签
+   git tag alpha-0.17.3.22
+   
+   # 强制推送到远端
+   git push origin alpha-0.17.3.22 --force
+   ```
+
+4. **验证修正结果**：
+   ```bash
+   # 使用 git show 验证（应该显示正确的中文）
+   git show --format=%B --no-patch HEAD
+   ```
+
+## Git 提交信息编码验证方法
+
+### 方法1：使用 git show 验证（推荐）
+```bash
+# 查看最新提交的完整信息（通常显示正确）
+git show --format=%B --no-patch HEAD
+```
+
+### 方法2：导出到文件验证
+```bash
+# 导出提交信息到文件（UTF-8 编码）
+git log -1 --format=%B | Out-File -Encoding utf8 commit_check.txt
+
+# 使用 Python 读取验证（注意：PowerShell 可能显示乱码，但文件内容是正确的）
+python -c "with open('commit_check.txt', 'rb') as f: content = f.read().decode('utf-8'); print(content)"
+```
+
+### 方法3：检查 Git 配置
+```bash
+# 检查提交编码配置
+git config --get i18n.commitencoding
+
+# 应该显示：utf-8
+# 如果不是，设置：git config --local i18n.commitencoding utf-8
+```
+
+## 最佳实践
+
+1. **始终使用 Python 脚本处理提交**：
+   - 确保 UTF-8 编码
+   - 避免 PowerShell 编码问题
+   - 便于自动化处理
+   - **标准流程**：
+     ```python
+     # 1. 创建 UTF-8 编码的提交信息文件
+     commit_msg = """fix(alpha-0.17.3.22): 修复问题
+     
+     - 详细描述
+     相关变更日志: docs/changelog/CHANGLOG-YYYYMMDD-HHMMSS.md"""
+     
+     with open('commit_msg.txt', 'wb') as f:
+         f.write(commit_msg.encode('utf-8'))
+     
+     # 2. 使用 -F 参数读取文件进行提交
+     subprocess.run(['git', 'commit', '-F', 'commit_msg.txt'], env=os.environ)
+     
+     # 3. 清理临时文件
+     os.remove('commit_msg.txt')
+     ```
+
+2. **提交前验证版本号**：
+   - 检查现有标签
+   - 确保版本号递增
+   - 在提交信息中包含版本号
+
+3. **同步更新变更日志**：
+   - 创建详细的变更日志文件
+   - 更新全局 CHANGELOG.md
+   - 确保版本号一致
+
+4. **使用提交信息文件**：
+   - 便于编辑和审查
+   - 确保编码正确
+   - 支持多行详细描述
+
+5. **推送到远端时的注意事项**：
+   - **验证提交信息**：推送前使用 `git show --format=%B --no-patch HEAD` 验证提交信息正确
+   - **强制推送标签**：如果修正了提交信息，需要强制推送标签：
+     ```bash
+     git push origin <tag-name> --force
+     ```
+   - **Web 界面验证**：推送后检查 Git 仓库的 Web 界面，确认中文显示正常
+   - **PowerShell 显示问题**：如果 PowerShell 显示乱码，但 `git show` 显示正确，说明 Git 存储是正确的，只是 PowerShell 显示问题
+
+6. **区分存储问题和显示问题**：
+   - **存储问题**：`git show` 也显示乱码 → 需要修正提交信息
+   - **显示问题**：`git show` 显示正确，但 `git log` 显示乱码 → 只是 PowerShell 显示问题，Git 存储正确
+

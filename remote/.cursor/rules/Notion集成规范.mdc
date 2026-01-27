@@ -1,0 +1,115 @@
+---
+description: Notion MCP服务集成规范，页面创建、内容更新、页面移动等操作的正确使用方法。使用 Notion 相关功能时使用。
+alwaysApply: false
+---
+# Notion集成规范
+
+## 核心原则
+
+- **正确格式**：严格按照 Notion MCP 工具的参数格式要求
+- **页面ID格式**：使用带连字符的 UUID 格式
+- **内容格式**：使用 Notion-flavored Markdown 格式
+- **错误处理**：参数格式错误时检查参数结构
+
+## 快速使用指南
+
+### 创建页面
+```python
+# ✅ 创建独立页面
+mcp_Notion_notion-create-pages(
+    pages=[{
+        'properties': {'title': '页面标题'},
+        'content': '# 标题\n\n内容...'
+    }]
+)
+
+# ✅ 创建子页面
+mcp_Notion_notion-create-pages(
+    parent={'page_id': '父页面ID'},
+    pages=[{
+        'properties': {'title': '子页面标题'},
+        'content': '内容...'
+    }]
+)
+```
+
+### 更新页面内容
+```python
+# ✅ 替换全部内容
+mcp_Notion_notion-update-page(
+    data={
+        'page_id': '页面ID',
+        'command': 'replace_content',
+        'new_str': '# 新标题\n\n新内容...'
+    }
+)
+
+# ✅ 插入内容
+mcp_Notion_notion-update-page(
+    data={
+        'page_id': '页面ID',
+        'command': 'insert_content_after',
+        'selection_with_ellipsis': '现有内容...',
+        'new_str': '\n\n新增内容...'
+    }
+)
+```
+
+### 移动页面
+```python
+# ✅ 移动到新父页面
+mcp_Notion_notion-move-pages(
+    page_or_database_ids=['页面ID'],
+    new_parent={'page_id': '新父页面ID'}
+)
+```
+
+## 常见错误模式
+
+### 1. parent 参数格式错误
+```python
+# ❌ 错误：parent 应该是对象
+parent='页面ID'  # 错误
+
+# ✅ 正确：parent 对象格式
+parent={'page_id': '页面ID'}
+```
+
+### 2. data 参数格式错误
+```python
+# ❌ 错误：data 应该是对象
+data='字符串'  # 错误
+
+# ✅ 正确：data 对象格式
+data={'page_id': 'ID', 'command': 'replace_content', ...}
+```
+
+### 3. 页面ID格式错误
+```python
+# ❌ 错误：缺少连字符
+page_id='2cba30299998197b763e0968531061b'  # 错误
+
+# ✅ 正确：带连字符的UUID
+page_id='2cba3029-99e9-8197-b763-e0968531061b'
+```
+
+## 内容格式规范
+
+### Notion Markdown 格式
+- **标题**：`# 一级标题`、`## 二级标题`
+- **列表**：`- 项目1`、`1. 编号项目`
+- **链接**：`[链接文本](URL)`
+- **代码块**：使用 ``` 包围代码
+- **表格**：使用 Markdown 表格语法
+
+### 空行处理
+- 使用 `<empty-block/>` 创建空行
+- 不要在行中混用 `<empty-block/>`
+
+## 最佳实践
+
+1. **参数格式**：严格按照工具要求的对象格式
+2. **错误处理**：遇到格式错误时检查参数结构
+3. **内容预览**：重要内容先在本地测试格式
+4. **ID获取**：从URL或API响应中获取正确的页面ID
+5. **批量操作**：小批量执行，避免一次性操作过多页面

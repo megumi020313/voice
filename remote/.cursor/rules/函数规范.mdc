@@ -1,0 +1,197 @@
+---
+description: 函数设计、抽象和复用规范，包括签名、文档、参数设计和复用原则。当编写函数、进行代码重构或需要函数复用时使用
+alwaysApply: false
+globs: ["**/*.py", "frontend/src/**/*.ts", "backend/**/*.py"]
+---
+# 函数规范
+
+## 核心原则
+
+- **单一职责**：每个函数只做一件事
+- **类型完整**：Python 3.12和TypeScript必须包含完整类型提示
+- **文档完整**：所有函数必须包含清晰的文档说明
+- **可测试性**：函数设计应便于单元测试
+- **可复用性**：优先复用现有函数，抽象通用逻辑
+
+## Python函数设计规范
+
+### 函数签名规范
+
+```python
+def function_name(param1: type1, param2: type2 = default_value) -> return_type:
+    """
+    函数文档字符串
+
+    Args:
+        param1: 参数1说明
+        param2: 参数2说明（可选）
+
+    Returns:
+        返回值说明
+
+    Raises:
+        ValueError: 当参数无效时
+    """
+    pass
+```
+
+**类型提示要求**：必须使用类型提示
+
+```python
+# ✅ 正确
+def calculate_total(price: float, quantity: int, tax_rate: float = 0.1) -> float:
+    """计算总价"""
+    return price * quantity * (1 + tax_rate)
+
+# ❌ 错误
+def calculate_total(price, quantity, tax_rate=0.1):
+    return price * quantity * (1 + tax_rate)
+```
+
+### 参数设计原则
+
+- 必需参数在前，可选参数在后
+- 参数不超过5个，超过时使用对象/dict
+- 返回值类型明确，一致性
+
+## TypeScript函数设计规范
+
+```typescript
+/**
+ * 函数功能描述
+ *
+ * @param param1 - 参数1说明
+ * @param param2 - 参数2说明（可选）
+ * @returns 返回值说明
+ * @throws {Error} 当发生错误时
+ */
+function functionName(param1: Type1, param2?: Type2): ReturnType {
+  // 实现
+}
+```
+
+## 函数索引维护规范
+
+### 强制要求
+**新增或修改任何函数时，必须同步更新函数索引**：
+
+#### 📋 索引位置
+- **主索引**: `docs/design/index/函数索引总览.md`
+- **模块索引**: `docs/design/modules/[模块]_函数索引.md`
+- **服务索引**: `docs/design/services/[服务]_函数索引.md`
+
+#### 📝 更新内容
+每个函数必须包含：
+- ✅ **函数签名**: 完整参数类型和返回值类型
+- ✅ **功能描述**: 详细功能说明
+- ✅ **参数说明**: 每个参数的作用和类型
+- ✅ **返回值说明**: 返回值类型和含义
+- ✅ **使用示例**: 实际调用示例
+- ✅ **依赖关系**: 依赖的模块和函数
+- ✅ **文件位置**: 准确的文件路径和行号
+
+#### 🔍 索引分类
+- **core**: 用户管理、权限、基础功能
+- **backend**: 后端业务逻辑和API
+- **frontend**: 前端组件和交互逻辑
+- **utils**: 通用工具函数
+- **modules**: 具体业务模块
+- **services**: 业务服务层
+
+### AI助手使用指南
+
+#### 快速查询流程
+1. **查看主索引**: `docs/design/index/函数索引总览.md`
+2. **定位模块**: 根据功能需求选择对应索引文件
+3. **查找函数**: 通过函数名或功能描述快速定位
+4. **获取详情**: 查看完整函数说明和使用示例
+
+#### 避免重复开发
+- **优先检查**: 在编写新函数前先查询索引
+- **功能复用**: 利用现有函数实现需求
+- **索引更新**: 发现缺失索引时及时补充
+
+## 函数复用规范
+
+### 识别可复用代码
+
+**标准**：
+- 相同逻辑出现3次以上
+- 逻辑独立，不依赖特定业务上下文
+- 功能明确，输入输出清晰
+- 可以独立测试
+
+### 抽象层次
+
+1. **工具函数层**（`backend/utils/`）：纯函数，无业务逻辑
+2. **通用组件层**（`backend/common/`）：业务通用逻辑
+3. **业务模块层**（`backend/modules/`）：完整业务功能
+
+### 示例：提取通用验证函数
+
+```python
+# ❌ 错误：重复代码
+def create_user(username, email):
+    if '@' not in email or '.' not in email.split('@')[1]:
+        raise ValueError("邮箱格式不正确")
+    # 创建用户逻辑...
+
+def create_supplier(name, email):
+    if '@' not in email or '.' not in email.split('@')[1]:  # 重复验证
+        raise ValueError("邮箱格式不正确")
+    # 创建供应商逻辑...
+
+# ✅ 正确：提取为可复用函数
+def validate_email_format(email: str) -> bool:
+    """验证邮箱格式"""
+    import re
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+def create_user(username: str, email: str) -> User:
+    if not validate_email_format(email):
+        raise ValueError("邮箱格式不正确")
+    # 创建用户逻辑...
+
+def create_supplier(name: str, email: str) -> Supplier:
+    if not validate_email_format(email):
+        raise ValueError("邮箱格式不正确")
+    # 创建供应商逻辑...
+```
+
+## 复用检查清单
+
+### 开发前检查
+- [ ] 检查 `backend/utils/` 是否有类似工具函数
+- [ ] 检查 `backend/common/` 是否有类似通用组件
+- [ ] 检查 `backend/modules/` 是否有类似业务模块
+
+### 开发中检查
+- [ ] 发现重复代码时，及时提取为可复用函数
+- [ ] 函数超过50行时，考虑拆分
+- [ ] 包含多个职责时，考虑抽象
+
+### 开发后检查
+- [ ] 是否有重复代码？
+- [ ] 是否可以复用现有函数？
+- [ ] 新函数是否可以供其他模块使用？
+
+## 函数库组织规范
+
+### utils/ 组织
+- 纯工具函数：`datetime_utils.py`、`string_utils.py`
+- 无状态，不依赖全局变量
+- 可被任何模块使用
+
+### common/ 组织
+- 业务通用组件：`validation.py`、`permission.py`
+- 可依赖数据模型
+- 多模块复用
+
+## 最佳实践
+
+1. **开发前先搜索**：开发新功能前，检查是否有可复用代码
+2. **及时提取**：发现重复代码时，及时提取为可复用函数
+3. **文档完整**：可复用函数必须有完整文档
+4. **测试覆盖**：可复用函数要有单元测试
+5. **接口稳定**：函数接口变更时，更新所有使用位置

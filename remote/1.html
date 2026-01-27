@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>声纹卫士 - VoiceGuard 调试控制台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f1f5f9; font-family: "Inter", "Microsoft YaHei", sans-serif; }
+        .nav-active { border-bottom: 3px solid white; opacity: 1 !important; }
+        .card-shadow { box-shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06); }
+        .timeline-container { background-image: linear-gradient(to right, #e2e8f0 1px, transparent 1px); background-size: 50px 100%; }
+        /* 人员颜色标识 */
+        .color-user-1 { background-color: #3b82f6; } /* 张三 - 蓝色 */
+        .color-user-2 { background-color: #10b981; } /* 李四 - 绿色 */
+        .color-unknown { background-color: #94a3b8; } /* 未知 - 灰色 */
+    </style>
+</head>
+<body>
+
+    <header class="bg-blue-900 text-white px-8 py-4 flex justify-between items-center shadow-md">
+        <div class="flex items-center space-x-3">
+            <i class="fa-solid fa-fingerprint text-2xl"></i>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight">声纹卫士 <span class="text-xs font-normal opacity-60">TEST-DEV</span></h1>
+            </div>
+        </div>
+        <nav class="flex space-x-12">
+            <a href="#" onclick="showTab('verify')" class="opacity-70 hover:opacity-100 pb-1 nav-active transition" id="tab-verify">声纹识别</a>
+            <a href="#" onclick="showTab('register')" class="opacity-70 hover:opacity-100 pb-1 transition" id="tab-register">声纹注册</a>
+            <a href="#" onclick="showTab('manage')" class="opacity-70 hover:opacity-100 pb-1 transition" id="tab-manage">注册库管理</a>
+        </nav>
+        <div class="text-xs font-mono opacity-50">v2.1.0-stable</div>
+    </header>
+
+    <main class="container mx-auto p-6">
+
+        <section id="sec-verify" class="space-y-6">
+            <div class="bg-white p-4 rounded-xl card-shadow flex justify-between items-center">
+                <div class="flex space-x-3">
+                    <button class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 flex items-center shadow-lg transition">
+                        <i class="fa-solid fa-microphone mr-2"></i>开启实时识别
+                    </button>
+                    <button class="bg-white text-gray-700 px-6 py-2 rounded-lg font-bold hover:bg-gray-50 border border-gray-300 flex items-center transition">
+                        <i class="fa-solid fa-file-import mr-2 text-blue-600"></i>导入识别音频文件
+                    </button>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <div class="text-right">
+                        <p class="text-[10px] text-gray-400 uppercase">Current Backend</p>
+                        <p class="text-xs font-bold text-gray-700">ERes2NetV2-Speaker-3D</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-12 gap-6">
+                <div class="col-span-8 space-y-6">
+                    <div class="bg-white p-6 rounded-xl card-shadow min-h-[300px]">
+                        <h2 class="text-sm font-bold mb-4 text-gray-500 uppercase tracking-widest">识别流分段结果</h2>
+                        <div class="space-y-3">
+                            <div class="flex items-center p-3 bg-blue-50 border-l-4 border-blue-500 rounded-r shadow-sm">
+                                <span class="text-xs font-mono text-gray-400 w-24">00:00 - 03:20</span>
+                                <span class="font-bold text-blue-900 w-32">张三</span>
+                                <div class="flex-grow bg-blue-200 h-1.5 rounded-full mx-4 overflow-hidden">
+                                    <div class="bg-blue-600 h-full w-[94%]"></div>
+                                </div>
+                                <span class="text-blue-600 font-mono font-bold text-sm">0.94</span>
+                            </div>
+                            <div class="flex items-center p-3 bg-gray-50 border-l-4 border-gray-300 rounded-r">
+                                <span class="text-xs font-mono text-gray-400 w-24">03:25 - 04:10</span>
+                                <span class="font-bold text-gray-400 w-32">未知人员</span>
+                                <div class="flex-grow bg-gray-200 h-1.5 rounded-full mx-4 overflow-hidden">
+                                    <div class="bg-gray-400 h-full w-[12%]"></div>
+                                </div>
+                                <span class="text-gray-400 font-mono font-bold text-sm">0.12</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-xl card-shadow">
+                        <h2 class="text-sm font-bold mb-6 text-gray-500 uppercase tracking-widest">识别轨迹时间轴 (Diarization)</h2>
+                        <div class="relative pt-6">
+                            <div class="absolute top-0 w-full flex justify-between text-[10px] text-gray-400 font-mono px-1">
+                                <span>0s</span><span>5s</span><span>10s</span><span>15s</span><span>20s</span><span>25s</span><span>30s</span>
+                            </div>
+                            <div class="h-12 w-full bg-gray-100 rounded-lg relative timeline-container flex items-center px-0 shadow-inner overflow-hidden border">
+                                <div class="color-user-1 h-8 w-[20%] ml-[2%] rounded-sm cursor-pointer hover:brightness-110" title="张三 (0-6s)"></div>
+                                <div class="color-unknown h-8 w-[10%] ml-[2%] rounded-sm cursor-pointer opacity-50" title="未知 (8-11s)"></div>
+                                <div class="color-user-1 h-8 w-[25%] ml-[1%] rounded-sm cursor-pointer hover:brightness-110" title="张三 (12-19s)"></div>
+                                <div class="color-user-2 h-8 w-[15%] ml-[3%] rounded-sm cursor-pointer hover:brightness-110" title="李四 (22-27s)"></div>
+                            </div>
+                            <div class="mt-4 flex space-x-6 text-[11px] font-medium">
+                                <div class="flex items-center"><span class="w-3 h-3 color-user-1 rounded-sm mr-2"></span> 张三</div>
+                                <div class="flex items-center"><span class="w-3 h-3 color-user-2 rounded-sm mr-2"></span> 李四</div>
+                                <div class="flex items-center"><span class="w-3 h-3 color-unknown rounded-sm mr-2"></span> 未知/静音</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-span-4 bg-white p-6 rounded-xl card-shadow text-center flex flex-col justify-center border-t-8 border-blue-600">
+                    <p class="text-xs font-bold text-gray-400 mb-6 uppercase tracking-widest">Current Active Speaker</p>
+                    <div class="w-32 h-32 bg-blue-50 rounded-full mx-auto flex items-center justify-center mb-6 border-4 border-white shadow-lg text-blue-600">
+                        <i class="fa-solid fa-user-check text-5xl"></i>
+                    </div>
+                    <h3 class="text-3xl font-black text-gray-800 tracking-tight mb-1">张三</h3>
+                    <p class="text-blue-500 font-mono font-bold">MATCH: 94.21%</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="sec-register" class="hidden flex justify-center py-12">
+            <div class="w-full max-w-2xl bg-white p-8 rounded-2xl card-shadow border-t-8 border-blue-900">
+                <h2 class="text-2xl font-black text-gray-800 mb-8 flex items-center">
+                    <i class="fa-solid fa-user-plus mr-4 text-blue-900"></i>人员声纹注册
+                </h2>
+                <div class="space-y-8">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-500 uppercase mb-3">人员姓名</label>
+                        <input type="text" class="w-full bg-gray-50 border-2 border-gray-100 p-4 rounded-xl focus:border-blue-600 focus:bg-white outline-none transition text-lg font-bold" placeholder="输入识别姓名">
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <button class="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 p-8 rounded-xl hover:bg-blue-50 hover:border-blue-400 transition group">
+                            <i class="fa-solid fa-microphone text-3xl text-gray-300 group-hover:text-blue-600 mb-3"></i>
+                            <span class="text-sm font-bold text-gray-500 group-hover:text-blue-600">实时录音注册</span>
+                        </button>
+                        <button class="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 p-8 rounded-xl hover:bg-blue-50 hover:border-blue-400 transition group">
+                            <i class="fa-solid fa-cloud-arrow-up text-3xl text-gray-300 group-hover:text-blue-600 mb-3"></i>
+                            <span class="text-sm font-bold text-gray-500 group-hover:text-blue-600">上传音频文件</span>
+                        </button>
+                    </div>
+
+                    <div class="bg-blue-900 text-white p-4 rounded-xl flex items-center justify-between shadow-lg opacity-50 cursor-not-allowed">
+                        <span class="font-bold">保存至特征库</span>
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="sec-manage" class="hidden">
+            <div class="bg-white rounded-xl card-shadow overflow-hidden">
+                <div class="p-6 border-b flex justify-between items-center">
+                    <h2 class="font-bold text-gray-700">特征库管理 <span class="ml-2 px-2 py-0.5 bg-gray-100 text-gray-400 text-[10px] rounded-full">1,204 条目</span></h2>
+                </div>
+                <table class="w-full">
+                    <thead class="bg-gray-50 text-[10px] text-gray-400 uppercase tracking-widest font-bold border-b">
+                        <tr>
+                            <th class="px-6 py-4">姓名</th>
+                            <th class="px-6 py-4 text-center">特征状态</th>
+                            <th class="px-6 py-4">注册日期</th>
+                            <th class="px-6 py-4 text-right">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-sm divide-y divide-gray-100">
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="px-6 py-4 font-bold text-gray-700">张三</td>
+                            <td class="px-6 py-4 text-center"><span class="px-2 py-1 bg-green-100 text-green-700 text-[10px] rounded-full font-bold">NORMAL</span></td>
+                            <td class="px-6 py-4 text-gray-400 font-mono">2025-12-23</td>
+                            <td class="px-6 py-4 text-right space-x-3">
+                                <button class="text-blue-600 hover:underline">导出向量</button>
+                                <button class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash"></i></button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        function showTab(tabName) {
+            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+            document.querySelectorAll('nav a').forEach(a => a.classList.remove('nav-active'));
+            document.getElementById('sec-' + tabName).classList.remove('hidden');
+            document.getElementById('tab-' + tabName).classList.add('nav-active');
+        }
+    </script>
+</body>
+</html>

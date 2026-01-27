@@ -1,0 +1,167 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+.history/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Data files
+*.wav
+*.mp3
+*.flac
+*.aac
+*.ogg
+*.m4a
+data/audio_samples/
+data/raw_long_audio/
+data/test/
+data/noise/
+data/calibration/
+
+# Project specific directories
+faster-whisper/
+3D-Speaker/
+*.onnx
+*.pt
+*.pth
+*.pkl
+*.h5
+*.pb
+*.ckpt
+*.bin
+*.model
+*.weights
+*.safetensors
+*.tflite
+*.mlmodel
+*.joblib
+*.npy
+*.npz
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Node.js (if any frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker
+.dockerignore
+
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Documentation
+docs/_build/
+*.pdf
+
+# Secrets and configs
+config/certs/
+*.key
+*.pem
+secrets.json
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Web assets
+static/uploads/
+*.zip
+*.tar.gz
+
+# Runtime
+runtime/
+onnxruntime/
+
+# Training artifacts
+checkpoints/
+tensorboard/
+wandb/
+
+# Speaker templates
+speaker_templates/
+cohort_targets/
+
+# Hugging Face models
+*.huggingface/
+huggingface_cache/
+transformers_cache/
+
+# Model artifacts
+artifacts/
+runs/
+experiments/
+output/
+results/
+
+# Large files
+*.tar.gz
+*.zip
+*.7z
+*.rar
