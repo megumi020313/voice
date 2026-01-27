@@ -52,18 +52,51 @@ Thumbs.db
 logs/
 *.log.*
 
-# Data files
+# Data files - Audio files (全局忽略，但 remote/remote-v2/data 目录特殊处理)
 *.wav
 *.mp3
 *.flac
 *.aac
 *.ogg
 *.m4a
-data/audio_samples/
-data/raw_long_audio/
-data/test/
-data/noise/
-data/calibration/
+
+# remote/remote-v2/data 目录：允许所有非音频文件上传
+# 先取消对该目录下所有文件的忽略（覆盖全局音频文件忽略规则）
+!remote/remote-v2/data/
+!remote/remote-v2/data/**
+# 然后只忽略该目录下的音频文件
+remote/remote-v2/data/**/*.wav
+remote/remote-v2/data/**/*.mp3
+remote/remote-v2/data/**/*.flac
+remote/remote-v2/data/**/*.aac
+remote/remote-v2/data/**/*.ogg
+remote/remote-v2/data/**/*.m4a
+
+# 其他 data 目录的音频文件（保持原有行为）
+data/audio_samples/*.wav
+data/audio_samples/*.mp3
+data/audio_samples/*.flac
+data/audio_samples/*.aac
+data/audio_samples/*.ogg
+data/audio_samples/*.m4a
+data/raw_long_audio/*.wav
+data/raw_long_audio/*.mp3
+data/raw_long_audio/*.flac
+data/raw_long_audio/*.aac
+data/raw_long_audio/*.ogg
+data/raw_long_audio/*.m4a
+data/test/*.wav
+data/test/*.mp3
+data/test/*.flac
+data/test/*.aac
+data/test/*.ogg
+data/test/*.m4a
+data/noise/*.wav
+data/noise/*.mp3
+data/noise/*.flac
+data/noise/*.aac
+data/noise/*.ogg
+data/noise/*.m4a
 
 # Project specific directories
 faster-whisper/
