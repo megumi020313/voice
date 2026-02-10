@@ -69,6 +69,9 @@ class Config:
         self.min_speech_duration_ms = vad_config['min_speech_duration_ms']
         self.min_silence_duration_ms = vad_config['min_silence_duration_ms']
         self.speech_pad_ms = vad_config['speech_pad_ms']
+        self.vad_first_segment_trim_ms = vad_config.get('first_segment_trim_ms', 0)  # 方案C：首段前缘微调(ms)，0关闭
+        self.vad_first_segment_warmup_pad_ms = vad_config.get('first_segment_warmup_pad_ms', 0)  # 模块1：Warm-up 填充(ms)，0关闭
+        self.vad_warmup_noise_rms_ratio = vad_config.get('warmup_noise_rms_ratio', 0.075)  # 模块1：填充噪声 RMS 比例 5%–10%
         
         # 声纹识别参数 (V14.0 - 严格拒识)
         speaker_config = config_data['speaker']
@@ -81,9 +84,11 @@ class Config:
         # V3.1 滑动窗口声纹流配置
         self.sv_window_size_s = speaker_config.get('sv_window_size_s', 1.5)  # 滑动窗口大小（秒）
         self.sv_window_step_s = speaker_config.get('sv_window_step_s', 0.5)  # 滑动窗口步长（秒）
+        self.sv_long_segment_duration_s = speaker_config.get('sv_long_segment_duration_s', 5.0)  # 长段子段 SV 阈值（秒），0 关闭
         
         # V3.1.1 方案F：特征提取专用padding
         self.extraction_pad_ms = speaker_config.get('extraction_pad_ms', 300)  # 特征提取padding（毫秒）
+        self.first_segment_dual_window_offset_ms = speaker_config.get('first_segment_dual_window_offset_ms', 0)  # 模块2：首段双窗口偏移(ms)，0关闭
         
         # 音频参数
         audio_config = config_data['audio']
@@ -156,6 +161,17 @@ class Config:
         self.asr_compute_type = asr_config.get('compute_type', 'float16')
         self.asr_vad_filter = asr_config.get('vad_filter', False)
         self.asr_device = asr_config.get('device', 'cuda')
+        # ASR 解码/抗幻觉参数（方案2）
+        self.asr_condition_on_previous_text = asr_config.get('condition_on_previous_text', False)
+        self.asr_temperature = asr_config.get('temperature', 0.0)
+        self.asr_no_speech_threshold = asr_config.get('no_speech_threshold', 0.5)
+        self.asr_log_prob_threshold = asr_config.get('log_prob_threshold', -1.0)
+        # ASR 幻觉过滤配置
+        hf = asr_config.get('hallucination_filter', {})
+        self.asr_hallucination_filter_enabled = hf.get('enabled', True)
+        self.asr_hallucination_max_word_duration = hf.get('max_word_duration', 3.0)
+        self.asr_hallucination_min_word_duration = hf.get('min_word_duration', 0.05)
+        self.asr_hallucination_max_repeat_count = hf.get('max_repeat_count', 3)
         
         # V3.0 对话智能引擎配置
         diarization_config = config_data.get('diarization', {})
@@ -165,6 +181,7 @@ class Config:
         self.diarization_low_confidence_threshold = diarization_config.get('low_confidence_threshold', 2.5)
         self.diarization_max_merge_duration = diarization_config.get('max_merge_duration', 10.0)
         self.diarization_anchor_correction = diarization_config.get('anchor_correction', True)
+        self.diarization_first_segment_snorm_cohort_ratio = diarization_config.get('first_segment_snorm_cohort_ratio', 1.0)  # 模块3：首段 S-Norm cohort 比例，1.0 不弱化
         # V3.1混合模式已废弃：SV直接使用全局VAD生成的optimized_segments
         # self.diarization_vad_min_silence_ms = diarization_config.get('vad_min_silence_ms', 200)
         
@@ -190,6 +207,14 @@ class Config:
         self.boundary_correction_base_diff = boundary_correction_config.get('base_diff', 0.08)
         self.boundary_correction_penalty_factor = boundary_correction_config.get('penalty_factor', 0.2)
         self.boundary_correction_out_of_zone_threshold = boundary_correction_config.get('out_of_zone_threshold', 0.35)
+        
+        # V3.5 unknown/zlh 边界修正
+        self.diarization_short_zlh_max_duration_s = diarization_config.get('diarization_short_zlh_max_duration_s', 2.0)
+        self.diarization_short_zlh_max_z_score = diarization_config.get('diarization_short_zlh_max_z_score', 4.5)
+        self.diarization_unknown_tail_to_zlh_window_s = diarization_config.get('diarization_unknown_tail_to_zlh_window_s', 2.5)
+        self.diarization_unknown_tail_min_zlh_z_score = diarization_config.get('diarization_unknown_tail_min_zlh_z_score', 4.5)
+        self.diarization_zlh_prefix_max_duration_s = diarization_config.get('diarization_zlh_prefix_max_duration_s', 2.0)
+        self.diarization_zlh_prefix_max_z_score = diarization_config.get('diarization_zlh_prefix_max_z_score', 4.5)
     
     def _ensure_directories(self) -> None:
         """确保必要的目录存在

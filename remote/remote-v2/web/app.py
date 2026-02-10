@@ -109,24 +109,27 @@ def upload_test_audio():
 
 
 if __name__ == '__main__':
-    # 读取配置
-    config_file = Path(__file__).parent.parent / "config" / "server_config.yaml"
+    # 读取配置（优先 __file__ 相对路径，其次当前工作目录）
+    base = Path(__file__).resolve().parent.parent
+    config_file = base / "config" / "server_config.yaml"
+    if not config_file.exists():
+        config_file = Path.cwd() / "config" / "server_config.yaml"
     
+    host = '0.0.0.0'
+    port = 5005
+    debug = False
+    api_port = 8003
     if config_file.exists():
         with open(config_file, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
             web_config = config.get('web', {})
             host = web_config.get('host', '0.0.0.0')
-            port = web_config.get('port', 5000)
+            port = int(web_config.get('port', 5005))
             debug = web_config.get('debug', False)
-            # 读取 API 端口配置
             api_config = config.get('api', {})
-            api_port = api_config.get('port', 8000)
+            api_port = int(api_config.get('port', 8003))
     else:
-        host = '0.0.0.0'
-        port = 5000
-        debug = False
-        api_port = 8000
+        print(f"⚠️ 未找到 server_config.yaml（已尝试 {base / 'config'} 与 {Path.cwd() / 'config'}），使用默认 port=5005")
     
     # SSL 证书路径
     cert_dir = Path(__file__).parent.parent / "config" / "certs"
@@ -144,20 +147,23 @@ if __name__ == '__main__':
     print("=" * 60)
     print("Remote-V2 Web测试界面")
     print("=" * 60)
-    print(f"本机访问: {protocol}://localhost:{port}")
-    print(f"局域网访问: {protocol}://10.8.21.33:{port}")
-    print(f"API地址: http://localhost:{api_port} (从 server_config.yaml 读取)")
+    url = f"{protocol}://127.0.0.1:{port}/"
+    print(f"本机访问: {url}")
+    print(f"         {protocol}://localhost:{port}/")
+    print(f"API地址: http://localhost:{api_port}")
     print("=" * 60)
     if ssl_context:
-        print("🔒 HTTPS 已启用（自签名证书）")
-        print("⚠️  重要提示：")
-        print(f"   - 浏览器会显示安全警告，点击'高级'→'继续访问'即可")
-        print(f"   - 或在浏览器中信任该证书")
+        print("🔒 HTTPS 已启用（自签名证书），浏览器会提示安全警告，点「高级」→「继续访问」")
     else:
-        print("⚠️  重要提示：")
-        print(f"   - 当前使用 HTTP 协议（未加密）")
-        print(f"   - 如需 HTTPS，请生成 SSL 证书")
+        print("当前为 HTTP，请用上述地址访问")
     print("=" * 60)
     
-    app.run(host=host, port=port, debug=debug, ssl_context=ssl_context)
+    try:
+        app.run(host=host, port=port, debug=debug, ssl_context=ssl_context)
+    except OSError as e:
+        if e.errno == 48 or "Address already in use" in str(e):
+            print(f"\n❌ 端口 {port} 已被占用。请先释放端口：")
+            print(f"   lsof -ti:{port} | xargs kill -9")
+            print("   或修改 config/server_config.yaml 中 web.port 为其他端口（如 5006）\n")
+        raise
 

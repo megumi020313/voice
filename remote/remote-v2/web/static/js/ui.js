@@ -236,11 +236,13 @@ class UIController {
      * 显示识别结果（包含分段详情）
      */
     showRecognitionResult(type, title, basicInfo, segments, processingTime = 0) {
-        // 只显示分段结果和时间轴，不显示详细表格
-        this.showSegmentsList(segments);
-        this.showTimeline(segments);
-        
-        // 显示处理时间
+        const segs = Array.isArray(segments) ? segments : (segments ? [segments] : []);
+        this.showSegmentsList(segs);
+        this.showTimeline(segs);
+        if (segs.length > 0) {
+            const card = document.getElementById('result-segments');
+            if (card && card.style.display !== 'none') card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
         if (processingTime > 0) {
             const processingTimeEl = document.getElementById('processing-time');
             const processingTimeValue = document.getElementById('processing-time-value');
@@ -258,7 +260,8 @@ class UIController {
         const segmentsCard = document.getElementById('result-segments');
         const segmentsList = document.getElementById('segments-list');
         
-        if (!segmentsCard || !segmentsList || !segments || segments.length === 0) {
+        const segs = Array.isArray(segments) ? segments : [];
+        if (!segmentsCard || !segmentsList || segs.length === 0) {
             if (segmentsCard) segmentsCard.style.display = 'none';
             return;
         }
@@ -274,7 +277,7 @@ class UIController {
         ];
         
         let colorIndex = 0;
-        segments.forEach(segment => {
+        segs.forEach(segment => {
             const user = segment.user || segment.user_id || 'unknown';
             if (!userColors[user]) {
                 if (user === 'unknown' || user === 'silence') {
@@ -298,9 +301,9 @@ class UIController {
             </div>
         `;
         
-        segments.forEach((segment, index) => {
-            const startTime = segment.start ? segment.start.toFixed(2) : '0.00';
-            const endTime = segment.end ? segment.end.toFixed(2) : '0.00';
+        segs.forEach((segment, index) => {
+            const startTime = (segment.start != null) ? Number(segment.start).toFixed(2) : '0.00';
+            const endTime = (segment.end != null) ? Number(segment.end).toFixed(2) : '0.00';
             const duration = ((segment.end || 0) - (segment.start || 0)).toFixed(2);
             const user = segment.user || segment.user_id || 'unknown';
             

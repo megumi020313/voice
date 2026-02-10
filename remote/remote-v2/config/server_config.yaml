@@ -3,14 +3,14 @@
 # API 服务器配置
 api:
   host: "0.0.0.0"
-  port: 8001
+  port: 8003
   workers: 1
   timeout: 600  # 超时时间（秒），大文件上传需要更长时间，设置为10分钟
 
-# Web 服务器配置
+# Web 服务器配置（5005 避免与 Cursor/系统占用 5004 冲突）
 web:
   host: "0.0.0.0"
-  port: 5004
+  port: 5005
   debug: false
 
 # 日志配置

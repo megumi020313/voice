@@ -181,7 +181,10 @@ class InferencePipeline:
         
         min_duration_samples = int((self.config.min_speech_duration_ms / 1000) * sample_rate)
         
-        for region in merged_regions:
+        trim_ms = getattr(self.config, 'vad_first_segment_trim_ms', 0)
+        trim_samples_max = int((trim_ms / 1000) * sample_rate) if trim_ms > 0 else 0
+        
+        for seg_idx, region in enumerate(merged_regions):
             start_sample = region['start']
             end_sample = region['end']
             
@@ -191,6 +194,21 @@ class InferencePipeline:
                 duration_ms = (duration_samples / sample_rate) * 1000
                 self.logger.debug(f"过滤过短片段: {duration_ms:.1f}ms < {self.config.min_speech_duration_ms}ms")
                 continue
+            
+            # 方案C：首段前缘微调（第一个 VAD 片段 start 向后微移 50–100ms，减少前缘噪声）
+            if seg_idx == 0 and trim_samples_max > 0:
+                trim_samples = min(
+                    trim_samples_max,
+                    duration_samples - min_duration_samples
+                )
+                trim_samples = max(0, trim_samples)
+                if trim_samples > 0:
+                    start_sample = start_sample + trim_samples
+                    duration_samples = end_sample - start_sample
+                    self.logger.info(
+                        f"首段前缘微调: start 向后微移 {1000*trim_samples/sample_rate:.0f}ms "
+                        f"(配置 {trim_ms}ms)，新 start={start_sample/sample_rate:.2f}s"
+                    )
             
             # 小Padding：边界判断用（裁剪到音频边界）
             padded_start_sample = max(0, start_sample - boundary_padding_samples)
@@ -203,6 +221,30 @@ class InferencePipeline:
             # 提取两种padding的音频片段
             audio_segment = audio[padded_start_sample:padded_end_sample]
             extraction_audio_segment = audio[extraction_start_sample:extraction_end_sample]
+            
+            # 首段对称上下文 / 模块1 Warm-up Padding：首段左侧填充，缓解左上下文缺失导致的统计不稳定
+            is_first_segment = (seg_idx == 0)
+            left_missing = extraction_padding_samples - (start_sample - extraction_start_sample)
+            warmup_ms = getattr(self.config, 'vad_first_segment_warmup_pad_ms', 0)
+            warmup_ratio = getattr(self.config, 'vad_warmup_noise_rms_ratio', 0.075)
+            if is_first_segment and warmup_ms > 0:
+                # 模块1：首段始终加 300ms Warm-up 噪声（不依赖 left_missing），保证首段 embedding 稳定
+                warmup_samples = int((warmup_ms / 1000) * sample_rate)
+                segment_rms = float(np.sqrt(np.mean(extraction_audio_segment.astype(np.float64) ** 2) + 1e-12))
+                noise_rms_target = segment_rms * warmup_ratio
+                noise = np.random.randn(warmup_samples).astype(audio.dtype)
+                n_rms = np.sqrt(np.mean(noise ** 2) + 1e-12)
+                noise = (noise / n_rms) * noise_rms_target
+                extraction_audio_segment = np.concatenate([noise, extraction_audio_segment])
+                self.logger.info(
+                    f"首段 Warm-up Padding: {warmup_ms}ms 低能量噪声 (RMS≈{warmup_ratio*100:.0f}% 主语音)"
+                )
+            elif is_first_segment and left_missing > 0:
+                pad_zeros = np.zeros(left_missing, dtype=audio.dtype)
+                extraction_audio_segment = np.concatenate([pad_zeros, extraction_audio_segment])
+                self.logger.info(
+                    f"首段左侧补零: {left_missing} 样本 ({1000*left_missing/sample_rate:.0f}ms)，保证对称上下文"
+                )
             
             # 构建片段信息
             segment = {
@@ -241,6 +283,74 @@ class InferencePipeline:
         )
         
         return optimized_segments
+    
+    def _filter_asr_hallucinations(
+        self,
+        asr_words: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """过滤 ASR 幻觉词：超长词、零时长词、过短词、连续重复词。"""
+        if not asr_words:
+            return asr_words
+        enabled = getattr(
+            self.config, 'asr_hallucination_filter_enabled', True
+        )
+        if not enabled:
+            return asr_words
+        max_dur = getattr(
+            self.config, 'asr_hallucination_max_word_duration', 3.0
+        )
+        min_dur = getattr(
+            self.config, 'asr_hallucination_min_word_duration', 0.05
+        )
+        max_repeat = getattr(
+            self.config, 'asr_hallucination_max_repeat_count', 3
+        )
+        filtered = []
+        prev_word = None
+        repeat_count = 0
+        for w in asr_words:
+            start = w.get('start', 0)
+            end = w.get('end', start)
+            duration = end - start
+            text = w.get('word', w.get('text', '')).strip()
+            # 规则1：超长词
+            if duration > max_dur:
+                self.logger.debug(
+                    f"幻觉过滤-超长词: '{text}' "
+                    f"(时长={duration:.2f}s, {start:.2f}s-{end:.2f}s)"
+                )
+                continue
+            # 规则2：零时长词
+            if duration <= 0:
+                self.logger.debug(
+                    f"幻觉过滤-零时长词: '{text}' (位置={start:.2f}s)"
+                )
+                continue
+            # 规则3：过短词
+            if duration < min_dur:
+                self.logger.debug(
+                    f"幻觉过滤-过短词: '{text}' (时长={duration:.2f}s)"
+                )
+                continue
+            # 规则4：连续重复词
+            if prev_word is not None and text == prev_word.get('word', prev_word.get('text', '')):
+                repeat_count += 1
+                if repeat_count >= max_repeat:
+                    self.logger.debug(
+                        f"幻觉过滤-重复词: '{text}' (连续{repeat_count}次)"
+                    )
+                    continue
+            else:
+                repeat_count = 0
+            filtered.append(w)
+            prev_word = w
+        dropped = len(asr_words) - len(filtered)
+        if dropped > 0:
+            self.logger.info(
+                f"📊 ASR幻觉过滤: 原始 {len(asr_words)} 个词 → "
+                f"过滤 {dropped} 个 → 保留 {len(filtered)} 个"
+            )
+        return filtered
     
     def _filter_asr_by_vad(
         self,
@@ -1541,19 +1651,47 @@ class InferencePipeline:
         
         try:
             # ========== 批量推理优化：使用优化后的片段（方案F：使用大padding的extraction_audio） ==========
+            # 长段子段展开：超过 sv_long_segment_duration_s 的片段按滑动窗口拆成子段，便于同一段内区分多说话人
             audio_segments = []
             segment_metadata = []  # 保存每个片段的元数据
-            
+            long_threshold_s = getattr(self.config, 'sv_long_segment_duration_s', 5.0)
+            sub_window_s = self.config.sv_window_size_s
+            sub_step_s = self.config.sv_window_step_s
+            pad_s = self.config.extraction_pad_ms / 1000.0
+
             for segment in optimized_segments:
-                # 方案F：使用大padding的extraction_audio进行特征提取，保证充足上下文
-                audio_segments.append(segment['extraction_audio'])
-                # 使用原始时间（不含padding）作为SV结果的时间戳
-                segment_metadata.append({
-                    'start': segment['start'],
-                    'end': segment['end']
-                })
+                seg_start = float(segment['start'])
+                seg_end = float(segment['end'])
+                dur = seg_end - seg_start
+                ext_audio = segment['extraction_audio']
+
+                if long_threshold_s <= 0 or dur <= long_threshold_s:
+                    audio_segments.append(ext_audio)
+                    segment_metadata.append({'start': seg_start, 'end': seg_end})
+                    continue
+
+                # 长段：滑动窗口子段，使 DiarizationEngine 能按时间区分不同说话人
+                sub_count = 0
+                t0 = 0.0
+                while t0 < dur:
+                    win_s = min(sub_window_s, dur - t0)
+                    if win_s < 0.5:
+                        break
+                    start_samp = int((t0 + pad_s) * sample_rate)
+                    end_samp = int((t0 + win_s + pad_s) * sample_rate)
+                    if start_samp >= len(ext_audio):
+                        break
+                    end_samp = min(end_samp, len(ext_audio))
+                    sub_audio = np.asarray(ext_audio[start_samp:end_samp], dtype=np.float32)
+                    audio_segments.append(sub_audio)
+                    segment_metadata.append({'start': seg_start + t0, 'end': seg_start + t0 + win_s})
+                    sub_count += 1
+                    t0 += sub_step_s
+                self.logger.info(
+                    f"长段子段展开: [{seg_start:.2f}s-{seg_end:.2f}s] 拆为 {sub_count} 个子段 (window={sub_window_s}s, step={sub_step_s}s)"
+                )
             
-            # ========== 批量提取声纹特征 ==========
+            # ========== 批量提取声纹特征（首段支持模块2 双窗口聚合） ==========
             sv_results = []
             if audio_segments:
                 self.logger.info(
@@ -1562,21 +1700,51 @@ class InferencePipeline:
                 )
                 
                 try:
-                    # 使用批量推理（batch_size=16）
-                    embeddings = self.speaker_model.extract_batch_embeddings(
-                        audio_segments,
-                        batch_size=self.config.speaker_batch_size
-                    )
+                    offset_ms = getattr(self.config, 'first_segment_dual_window_offset_ms', 0)
+                    use_dual_window = offset_ms > 0 and len(audio_segments) > 0
+                    embeddings_list = []
+                    if use_dual_window:
+                        # 模块2：首段双窗口 embedding 聚合（L2 归一化均值，降低方差）
+                        first_audio = np.asarray(audio_segments[0], dtype=np.float32)
+                        offset_samp = int((offset_ms / 1000) * sample_rate)
+                        min_len = int(0.5 * sample_rate)
+                        win2 = first_audio[offset_samp:] if len(first_audio) > offset_samp + min_len else first_audio
+                        two_embs = self.speaker_model.extract_batch_embeddings(
+                            [first_audio, win2],
+                            batch_size=2
+                        )
+                        if len(two_embs) == 2:
+                            e1 = two_embs[0].flatten()
+                            e2 = two_embs[1].flatten()
+                            e1 = e1 / (np.linalg.norm(e1) + 1e-8)
+                            e2 = e2 / (np.linalg.norm(e2) + 1e-8)
+                            mean_emb = (e1 + e2) / 2.0
+                            mean_emb = mean_emb / (np.linalg.norm(mean_emb) + 1e-8)
+                            embeddings_list.append(mean_emb)
+                            self.logger.info(f"首段双窗口聚合: offset={offset_ms}ms, L2 归一化均值")
+                        else:
+                            embeddings_list.append(two_embs[0].flatten() if len(two_embs) else np.zeros(192, dtype=np.float32))
+                    if len(audio_segments) > (1 if use_dual_window else 0):
+                        rest = audio_segments[1:] if use_dual_window else audio_segments
+                        rest_embs = self.speaker_model.extract_batch_embeddings(
+                            rest,
+                            batch_size=self.config.speaker_batch_size
+                        )
+                        embeddings_list.extend(rest_embs)
+                    embeddings = embeddings_list
                     
-                    # 识别每个片段的说话人
+                    # 识别每个片段的说话人（首段支持模块3 弱化 S-Norm）
+                    snorm_ratio_first = getattr(self.config, 'diarization_first_segment_snorm_cohort_ratio', 1.0)
                     for idx, (embedding, metadata) in enumerate(zip(embeddings, segment_metadata)):
                         try:
-                            # 识别说话人（使用 S-Norm 计算 Z-score）
+                            use_reduced_cohort = (idx == 0 and snorm_ratio_first < 1.0)
+                            cohort_ratio = snorm_ratio_first if use_reduced_cohort else 1.0
                             user_id, z_score = self.vector_storage.identify(
-                                embedding=embedding,
+                                embedding=embedding if isinstance(embedding, np.ndarray) else np.asarray(embedding),
                                 threshold=self.config.low_threshold,
-                                use_as_norm=False,  # 不使用AS-Norm
-                                use_snorm=True      # 使用S-Norm
+                                use_as_norm=False,
+                                use_snorm=True,
+                                snorm_cohort_ratio=cohort_ratio
                             )
                             
                             # 如果没有识别到，标记为 unknown
@@ -1601,6 +1769,23 @@ class InferencePipeline:
                 except Exception as e:
                     self.logger.error(f"批量特征提取失败: {e}")
             
+            # 方案B：首段锚点修正（首段置信度低且第二段高置信度同说话人时，用第二段拉齐首段）
+            if len(sv_results) >= 2:
+                first, second = sv_results[0], sv_results[1]
+                th = self.config.diarization_low_confidence_threshold
+                if (first['z_score'] < th
+                        and second['z_score'] >= th
+                        and second['speaker'] != 'unknown'):
+                    old_speaker, old_z = first['speaker'], first['z_score']
+                    sv_results[0]['speaker'] = second['speaker']
+                    sv_results[0]['z_score'] = second['z_score']
+                    sv_results[0]['confidence'] = second['confidence']
+                    sv_results[0]['corrected_by_first_segment_anchor'] = True
+                    self.logger.info(
+                        f"首段锚点修正: speaker={old_speaker}->{second['speaker']}, "
+                        f"z_score={old_z:.2f}->{second['z_score']:.2f}"
+                    )
+            
             self.logger.info(f"✅ 声纹识别完成: {len(sv_results)} 个片段")
             
         except Exception as e:
@@ -1623,13 +1808,16 @@ class InferencePipeline:
             asr_results = self.asr_service.transcribe_with_word_timestamps(
                 audio=audio,  # ⚠️ 整段音频，不是片段
                 language=language,
-                beam_size=beam_size,
+                beam_size=getattr(self.config, 'asr_beam_size', beam_size),
                 initial_prompt=self.config.asr_initial_prompt
             )
             
             self.logger.info(f"✅ ASR识别完成: {len(asr_results)} 个词（整段音频）")
             
-            # 后处理：过滤静音区的ASR词（使用VAD结果）
+            # 后处理1：过滤 ASR 幻觉词（超长/零时长/重复）
+            asr_results = self._filter_asr_hallucinations(asr_results)
+            
+            # 后处理2：过滤静音区的ASR词（使用VAD结果）
             if asr_results and optimized_segments:
                 original_count = len(asr_results)
                 asr_results = self._filter_asr_by_vad(asr_results, optimized_segments)

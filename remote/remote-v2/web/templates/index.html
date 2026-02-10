@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>声纹卫士 - VoiceGuard</title>
+    <script>window.API_PORT = {{ api_port }};</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
@@ -593,10 +594,7 @@
     <script src="/static/js/ui.js?v=20251223"></script>
     <script src="/static/js/main.js?v=20251223"></script>
     <script>
-        // 从后端传递的 API 端口配置
-        window.API_PORT = {{ api_port }};
         console.log('🔧 API端口配置:', window.API_PORT);
-        
         // 主选项卡切换
         function showMainTab(tabName) {
             document.querySelectorAll('main > section').forEach(s => s.classList.add('hidden'));
