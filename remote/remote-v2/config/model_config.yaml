@@ -21,6 +21,10 @@ vad:
   min_speech_duration_ms: 200  # 最小语音时长（毫秒）
   min_silence_duration_ms: 200  # 最小静音时长（毫秒），用于判断语音结束
   speech_pad_ms: 100  # 语音边界填充（毫秒），用于边界判断和合并（方案F：降低以避免重叠）
+  first_segment_trim_ms: 75  # 方案C：首段前缘微调（毫秒），首段 start 向后微移 50–100ms 减少前缘噪声，0 表示关闭
+  # 首段置信度提升 - 模块1：受控 Warm-up Padding（仅首段 embedding 提取音频左侧填充低能量噪声）
+  first_segment_warmup_pad_ms: 300  # 首段左侧填充时长（ms），与训练分布一致，0 关闭
+  warmup_noise_rms_ratio: 0.08     # 填充噪声 RMS 为主语音的约 8%，首段仍偏低可试 0.08–0.10
 
 # 声纹识别配置
 speaker:
@@ -29,12 +33,16 @@ speaker:
   top_k_ratio: 0.15  # Top-K比例
   batch_size: 64  # 批处理大小，越大越快但占用更多显存
   
-  # V3.1 滑动窗口声纹流配置
-  sv_window_size_s: 1.5  # 滑动窗口大小（秒），用于生成高分辨率声纹流
-  sv_window_step_s: 0.5  # 滑动窗口步长（秒），控制声纹流密度
+  # V3.1 滑动窗口声纹流配置（长段内多人区分）
+  sv_window_size_s: 1.2  # 窗口越小越“纯”，减少两说话人混在同一窗内
+  sv_window_step_s: 0.3  # 步长越小子段越密，词对齐到正确说话人概率更高
+  # 长段内多人区分：超过此时长的 VAD 段会按滑动窗口拆成子段做 SV
+  sv_long_segment_duration_s: 3.5  # 降低以对 3.5–4s 段也做子段 SV，0 表示关闭
   
   # V3.1.1 方案F：特征提取专用padding（仅用于提取声纹特征，不影响边界判断）
   extraction_pad_ms: 300  # 特征提取padding（毫秒），保证充足的上下文
+  # 首段置信度提升 - 模块2：首段双窗口 embedding 聚合（重叠窗口 L2 归一化均值）
+  first_segment_dual_window_offset_ms: 200  # 第二窗口相对首段起始的偏移（ms），0 关闭双窗口
 
 # 音频处理配置
 audio:
@@ -118,10 +126,21 @@ asr:
   enabled: true  # 是否启用ASR（V3.0需要）
   language: zh  # 语言代码：zh（中文）, en（英文）, auto（自动检测）
   initial_prompt: 以下是普通话的句子。  # 初始提示词，引导输出简体中文
-  beam_size: 5  # Beam search大小：1（最快）, 3（平衡推荐）, 5（高质量）, 10（最准确）
-  compute_type: float32  # 计算类型：float16（快速，仅GPU支持）, int8（更快但略降精度）, float32（最高精度，CPU推荐）
-  vad_filter: false  # 是否使用Whisper内置VAD过滤
+  beam_size: 10  # Beam search：10 优先准确率，5 平衡速度（方案2）
+  compute_type: float32  # float16（GPU推荐）, float32（CPU推荐）
+  vad_filter: true  # 建议开启，过滤静音区噪音词（方案2）
   device: cpu  # ASR使用的设备（已废弃，请使用device.asr_model）
+  # 解码/抗幻觉参数（方案2）
+  condition_on_previous_text: false  # 减少重复/跨段幻觉
+  temperature: 0.0  # 贪婪解码，输出稳定
+  no_speech_threshold: 0.5  # 静音判定阈值，可微调
+  log_prob_threshold: -1.0  # 与 no_speech 配合
+  # ASR 幻觉过滤（过滤超长词、零时长词、连续重复词）
+  hallucination_filter:
+    enabled: true
+    max_word_duration: 3.0   # 单词最大时长（秒），超过视为幻觉
+    min_word_duration: 0.05 # 单词最小时长（秒），过短视为噪音
+    max_repeat_count: 3     # 同一词连续出现超过此次数视为幻觉
 
 # V3.0 对话智能引擎配置
 diarization:
@@ -131,6 +150,8 @@ diarization:
   low_confidence_threshold: 2.5  # 低置信度阈值（Z-score），低于此值需要锚点修正
   max_merge_duration: 10.0  # 最大合并时长（秒），超过此值需要安全校验
   anchor_correction: true  # 是否启用锚点修正
+  # 首段置信度提升 - 模块3：首段弱化 S-Norm（缩小 cohort 集合，减弱首段 probe 统计劣势）
+  first_segment_snorm_cohort_ratio: 0.4  # 首段 S-Norm 使用的 cohort 比例（0.3–0.6），1.0 表示不弱化
   # vad_min_silence_ms: 200  # ❌ V3.1混合模式已废弃：SV直接使用全局VAD生成的optimized_segments（vad.min_silence_duration_ms=300）
   
   # V3.1 词-说话人对齐配置（IoU > Center > Score三级决策）
@@ -167,3 +188,11 @@ diarization:
   
   # V3.4 平滑修正（三明治法则）- 修复A->B->A短时跳变
   smoothing_duration_threshold: 0.8  # 时长阈值（秒），低于此值的夹心词将被修正
+  
+  # V3.5 unknown/zlh 边界修正
+  diarization_short_zlh_max_duration_s: 2.0   # 夹在 unknown 之间的 zlh 段，时长低于此且低置信则改标 unknown
+  diarization_short_zlh_max_z_score: 4.5      # 上述 zlh 段平均 z_score 低于此则改标
+  diarization_unknown_tail_to_zlh_window_s: 2.5   # unknown→zlh 边界前 N 秒内的 unknown 词可改标 zlh
+  diarization_unknown_tail_min_zlh_z_score: 4.5   # 仅当紧随的 zlh 首词 z_score 不低于此值时执行段尾改标
+  diarization_zlh_prefix_max_duration_s: 2.0  # zlh 段首 N 秒内低置信则改标 unknown（如“扮演一个客人。”）
+  diarization_zlh_prefix_max_z_score: 4.5     # 上述段首平均 z_score 低于此则改标

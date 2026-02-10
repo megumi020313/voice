@@ -133,6 +133,9 @@ class DiarizationEngine:
         # 阶段三：平滑修正（修复A->B->A的短时跳变错误）
         smoothed_aligned_words = self._apply_smoothing(corrected_aligned_words, log_path=log_path)
         
+        # 阶段3.5：unknown/zlh 边界修正（短段误标 zlh→unknown、unknown 段尾误标→zlh）
+        smoothed_aligned_words = self._apply_unknown_zlh_boundary_fix(smoothed_aligned_words)
+        
         # 步骤四：置信度感知的聚合
         final_transcript = self._aggregate_with_confidence(smoothed_aligned_words)
         
@@ -365,14 +368,10 @@ class DiarizationEngine:
                 word_start = word_info['start']
                 word_end = word_info['end']
                 word_speaker = word_info['speaker']
-                
                 # 检查词与嫌疑区是否有时间重叠
-                # 重叠条件：词的开始时间 < 嫌疑区结束 AND 词的结束时间 > 嫌疑区开始
                 has_overlap = (word_start < suspicion_zone_end and word_end > suspicion_zone_start)
-                
                 if has_overlap and word_speaker == prev_speaker:
                     suspicious_words_info.append((i, word_info))
-            
             diagnostic_log.append(f"\n嫌疑区内的词: {len(suspicious_words_info)} 个")
             
             if not suspicious_words_info:
@@ -386,18 +385,14 @@ class DiarizationEngine:
             
             for word_idx, (i, word_info) in enumerate(suspicious_words_info):
                 word_duration = word_info['end'] - word_info['start']
-                
                 # 时长过滤（<0.2s的词跳过）
                 if word_duration >= 0.2 and self.audio_tensor is not None:
                     try:
                         sr = 16000
                         start_idx = int(word_info['start'] * sr)
                         end_idx = int(word_info['end'] * sr)
-                        
-                        # 边界保护
                         start_idx = max(0, start_idx)
                         end_idx = min(len(self.audio_tensor), end_idx)
-                        
                         if start_idx < end_idx:
                             word_audio = self.audio_tensor[start_idx:end_idx]
                             word_audios.append(word_audio)
@@ -652,6 +647,117 @@ class DiarizationEngine:
         
         return smoothed_words
     
+    def _apply_unknown_zlh_boundary_fix(
+        self,
+        aligned_words: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """unknown/zlh 边界修正（V3.5）
+        
+        1. 短段误标：unknown - 短时低置信 zlh - unknown → 中间段改标 unknown（如“我是扮演一个”应为 cc）
+        2. 段尾误标：unknown 段尾紧接高置信 zlh 时，将段尾若干秒内的 unknown 词改标 zlh（如“我们这儿有牛”）
+        """
+        if len(aligned_words) < 2:
+            return aligned_words
+        out = [w.copy() for w in aligned_words]
+        max_zlh_dur_s = getattr(self.config, 'diarization_short_zlh_max_duration_s', 2.0)
+        max_zlh_z = getattr(self.config, 'diarization_short_zlh_max_z_score', 4.5)
+        tail_window_s = getattr(self.config, 'diarization_unknown_tail_to_zlh_window_s', 2.5)
+        min_zlh_z = getattr(self.config, 'diarization_unknown_tail_min_zlh_z_score', 5.0)
+        n = len(out)
+        # 1) 找连续 zlh 区间：前后均为 unknown，且时长<=max_zlh_dur_s、平均 z_score<=max_zlh_z → 改标 unknown
+        i = 0
+        while i < n:
+            if out[i]['speaker'] != 'zlh':
+                i += 1
+                continue
+            j = i
+            while j < n and out[j]['speaker'] == 'zlh':
+                j += 1
+            run_start, run_end = i, j
+            if run_start == 0 or run_end == n:
+                i = j
+                continue
+            prev_unknown = out[run_start - 1]['speaker'] == 'unknown'
+            next_unknown = run_end < n and out[run_end]['speaker'] == 'unknown'
+            if not (prev_unknown and next_unknown):
+                i = j
+                continue
+            dur = sum(out[k]['end'] - out[k]['start'] for k in range(run_start, run_end))
+            z_scores = [out[k].get('z_score') or 0 for k in range(run_start, run_end)]
+            avg_z = sum(z_scores) / len(z_scores) if z_scores else 0
+            if dur <= max_zlh_dur_s and avg_z <= max_zlh_z:
+                for k in range(run_start, run_end):
+                    out[k]['speaker'] = 'unknown'
+                    out[k]['unknown_zlh_fix'] = 'short_zlh_to_unknown'
+                self.logger.debug(
+                    f"unknown/zlh修正: 短段 zlh→unknown [{run_start}:{run_end}] dur={dur:.2f}s avg_z={avg_z:.2f}"
+                )
+            i = j
+        # 2) unknown → zlh 边界：若首词 zlh 的 z_score >= min_zlh_z，将边界前 tail_window_s 内的 unknown 词改标 zlh
+        i = 0
+        while i < n - 1:
+            if out[i]['speaker'] != 'unknown':
+                i += 1
+                continue
+            j = i
+            while j < n and out[j]['speaker'] == 'unknown':
+                j += 1
+            if j >= n:
+                break
+            first_zlh_start = out[j]['start']
+            first_zlh_z = out[j].get('z_score') or 0
+            if first_zlh_z < min_zlh_z:
+                i = j
+                while i < n and out[i]['speaker'] == 'zlh':
+                    i += 1
+                continue
+            zone_end = first_zlh_start
+            zone_start = max(0.0, first_zlh_start - tail_window_s)
+            for k in range(i, j):
+                w = out[k]
+                if w['end'] > zone_start and w['start'] < zone_end:
+                    out[k]['speaker'] = 'zlh'
+                    out[k]['unknown_zlh_fix'] = 'unknown_tail_to_zlh'
+            i = j
+            while i < n and out[i]['speaker'] == 'zlh':
+                i += 1
+        # 3) zlh 段首低置信改标 unknown：unknown→zlh 时，若 zlh 段首若干秒内平均 z_score 较低，则改标为 unknown（如“扮演一个客人。”）
+        prefix_max_dur_s = getattr(self.config, 'diarization_zlh_prefix_max_duration_s', 2.0)
+        prefix_max_z = getattr(self.config, 'diarization_zlh_prefix_max_z_score', 4.5)
+        i = 0
+        while i < n - 1:
+            if out[i]['speaker'] != 'zlh':
+                i += 1
+                continue
+            j = i
+            while j < n and out[j]['speaker'] == 'zlh':
+                j += 1
+            if i == 0 or j == n:
+                i = j
+                continue
+            if out[i - 1]['speaker'] != 'unknown':
+                i = j
+                continue
+            run_end_time = out[i]['start'] + prefix_max_dur_s
+            k = i
+            prefix_words = []
+            while k < j and out[k]['start'] < run_end_time:
+                prefix_words.append(k)
+                k += 1
+            if not prefix_words:
+                i = j
+                continue
+            avg_z = sum(out[idx].get('z_score') or 0 for idx in prefix_words) / len(prefix_words)
+            if avg_z <= prefix_max_z:
+                for idx in prefix_words:
+                    out[idx]['speaker'] = 'unknown'
+                    out[idx]['unknown_zlh_fix'] = 'zlh_prefix_to_unknown'
+                self.logger.debug(
+                    f"unknown/zlh修正: zlh段首→unknown 前{len(prefix_words)}词 avg_z={avg_z:.2f}"
+                )
+            i = j
+        return out
+    
     def _append_diagnostic_log(self, log_path: str, diagnostic_log: List[str]) -> None:
         """追加诊断日志到识别日志文件
         
@@ -902,8 +1008,11 @@ class DiarizationEngine:
                 'iou': best['iou']
             }
         elif len(center_candidates) > 1:
-            # 多个包含词中心点，在这些候选中选择Z-score最高的
-            best = max(center_candidates, key=lambda c: c['z_score'])
+            # 多个包含词中心点：先选 Z-score 最高；同分则选与词重叠时长(intersection)更大的
+            best = max(
+                center_candidates,
+                key=lambda c: (c['z_score'], c['intersection'])
+            )
             return {
                 'speaker': best['speaker'],
                 'z_score': best['z_score'],
@@ -914,8 +1023,8 @@ class DiarizationEngine:
                 'iou': best['iou']
             }
         
-        # 步骤3：Score规则 - 如果都不满足，选择Z-score最高的片段
-        best = max(iou_candidates, key=lambda c: c['z_score'])
+        # 步骤3：Score规则 - 否则选 Z-score 最高；同分则选重叠时长更大的
+        best = max(iou_candidates, key=lambda c: (c['z_score'], c['intersection']))
         return {
             'speaker': best['speaker'],
             'z_score': best['z_score'],

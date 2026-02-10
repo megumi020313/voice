@@ -219,14 +219,16 @@ class VectorStorage:
         return float((raw_score - mean) / (std + 1e-6))
     
     def compute_snorm_score(self, target_emb: np.ndarray, probe_emb: np.ndarray, 
-                           target_metadata: Optional[Dict] = None) -> float:
+                           target_metadata: Optional[Dict] = None,
+                           cohort_ratio: float = 1.0) -> float:
         """S-Norm评分（对称归一化，Z-Norm + T-Norm的平均）
         
         Args:
             target_emb: 注册向量
             probe_emb: 测试向量
             target_metadata: 注册用户的元数据（包含预计算的T-Norm参数）
-            
+            cohort_ratio: 首段弱化 S-Norm 时 Z-Norm 使用的 cohort 比例（0.3–0.6），1.0 表示不弱化
+        
         Returns:
             S-score（对称归一化分数）
         """
@@ -235,10 +237,12 @@ class VectorStorage:
         if self.cohort_matrix is None:
             return raw_score
         
-        # 1. Z-Norm（针对probe）
+        # 1. Z-Norm（针对probe）；模块3：首段可使用缩小 cohort 集合
         probe_flat = probe_emb.flatten()
         score_p = np.dot(self.cohort_matrix, probe_flat)
-        k = min(self.top_k, len(score_p))
+        k_full = min(self.top_k, len(score_p))
+        k = max(1, int(k_full * cohort_ratio)) if cohort_ratio < 1.0 else k_full
+        k = min(k, len(score_p))
         top_k_idx = np.argpartition(score_p, -k)[-k:]
         top_scores_p = score_p[top_k_idx]
         mu_probe = np.mean(top_scores_p)
@@ -365,7 +369,8 @@ class VectorStorage:
         logger.info(f"User {user_id} registered (overwrite={overwrite}, S-Norm enabled).")
 
     def identify(self, embedding: np.ndarray, threshold: float, use_as_norm: bool = False, 
-                use_snorm: bool = True) -> Tuple[Optional[str], float]:
+                use_snorm: bool = True,
+                snorm_cohort_ratio: float = 1.0) -> Tuple[Optional[str], float]:
         """识别说话人
         
         Args:
@@ -373,6 +378,7 @@ class VectorStorage:
             threshold: 识别阈值
             use_as_norm: 是否使用 AS-Norm 计算 Z-score（默认False）
             use_snorm: 是否使用 S-Norm 计算对称归一化分数（默认True，优先级高于use_as_norm）
+            snorm_cohort_ratio: 模块3 首段弱化 S-Norm 时 cohort 比例（0.3–0.6），1.0 表示不弱化
             
         Returns:
             (user_id, score): 用户ID和分数（余弦相似度/Z-score/S-score）
@@ -387,10 +393,10 @@ class VectorStorage:
         
         for uid, emb in users.items():
             if use_snorm and self.cohort_matrix is not None:
-                # 使用 S-Norm 计算对称归一化分数（优先级最高）
+                # 使用 S-Norm 计算对称归一化分数（优先级最高）；首段可传 snorm_cohort_ratio < 1.0
                 user_data = self.get_user(uid)
                 metadata = user_data.get('metadata', {}) if user_data else {}
-                score = self.compute_snorm_score(emb, probe, metadata)
+                score = self.compute_snorm_score(emb, probe, metadata, cohort_ratio=snorm_cohort_ratio)
             elif use_as_norm and self.cohort_matrix is not None:
                 # 使用 AS-Norm 计算 Z-score
                 score = self.compute_as_norm_score(emb, probe)

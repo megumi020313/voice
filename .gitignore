@@ -198,3 +198,9 @@ results/
 *.zip
 *.7z
 *.rar
+
+# remote-v2 大模型二进制（不推送到 GitHub，克隆后需自行下载）
+remote/remote-v2/models/models--Systran--faster-whisper-large-v3/blobs/
+remote/remote-v2/models/.locks/
+remote/remote-v2/models/eres2netv2/pretrained_eres2netv2.ckpt
+remote/remote-v2/models/vad/src/silero_vad/data/silero_vad.jit

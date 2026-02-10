@@ -132,13 +132,24 @@ class WhisperService:
             else:
                 raise ValueError(f"不支持的音频类型: {type(audio)}")
             
+            # 从配置读取解码参数（方案2：准确率/抗幻觉）
+            cfg = get_config()
+            vad_filter_use = getattr(cfg, 'asr_vad_filter', vad_filter)
+            condition_on_previous_text = getattr(cfg, 'asr_condition_on_previous_text', False)
+            temperature = getattr(cfg, 'asr_temperature', 0.0)
+            no_speech_threshold = getattr(cfg, 'asr_no_speech_threshold', 0.5)
+            log_prob_threshold = getattr(cfg, 'asr_log_prob_threshold', -1.0)
             # 执行转录
             segments, info = self.model.transcribe(
                 audio_input,
                 language=language if language != "auto" else None,
                 beam_size=beam_size,
-                vad_filter=vad_filter,
-                initial_prompt=initial_prompt  # 引导模型输出简体中文
+                vad_filter=vad_filter_use,
+                initial_prompt=initial_prompt,
+                condition_on_previous_text=condition_on_previous_text,
+                temperature=temperature,
+                no_speech_threshold=no_speech_threshold,
+                log_prob_threshold=log_prob_threshold,
             )
             
             # 合并所有片段的文本
@@ -186,12 +197,17 @@ class WhisperService:
             else:
                 raise ValueError(f"不支持的音频类型: {type(audio)}")
             
-            # 执行转录
+            cfg = get_config()
             segments, info = self.model.transcribe(
                 audio_input,
                 language=language if language != "auto" else None,
                 beam_size=beam_size,
-                initial_prompt=initial_prompt  # 引导模型输出简体中文
+                initial_prompt=initial_prompt,
+                vad_filter=getattr(cfg, 'asr_vad_filter', False),
+                condition_on_previous_text=getattr(cfg, 'asr_condition_on_previous_text', False),
+                temperature=getattr(cfg, 'asr_temperature', 0.0),
+                no_speech_threshold=getattr(cfg, 'asr_no_speech_threshold', 0.5),
+                log_prob_threshold=getattr(cfg, 'asr_log_prob_threshold', -1.0),
             )
             
             # 收集所有片段
@@ -247,13 +263,19 @@ class WhisperService:
             else:
                 raise ValueError(f"不支持的音频类型: {type(audio)}")
             
-            # 执行转录，启用词级别时间戳
+            cfg = get_config()
+            # 执行转录，启用词级别时间戳（方案2 解码参数从 config 读取）
             segments, info = self.model.transcribe(
                 audio_input,
                 language=language if language != "auto" else None,
                 beam_size=beam_size,
                 initial_prompt=initial_prompt,
-                word_timestamps=True  # 关键：启用词级别时间戳
+                word_timestamps=True,
+                vad_filter=getattr(cfg, 'asr_vad_filter', False),
+                condition_on_previous_text=getattr(cfg, 'asr_condition_on_previous_text', False),
+                temperature=getattr(cfg, 'asr_temperature', 0.0),
+                no_speech_threshold=getattr(cfg, 'asr_no_speech_threshold', 0.5),
+                log_prob_threshold=getattr(cfg, 'asr_log_prob_threshold', -1.0),
             )
             
             # 收集所有词

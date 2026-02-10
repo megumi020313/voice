@@ -805,9 +805,11 @@ class VoiceprintApp {
                         const details = result.details || {};
                         const speakerId = data.speaker_id;
                         const confidence = data.confidence.toFixed(1);
+                        // 确保 segments 为数组（兼容后端 details.segments）
+                        const segments = Array.isArray(details.segments) ? details.segments : (details.segments ? [details.segments] : []);
                         
                         // 更新右侧当前说话人显示（传入所有片段）
-                        this.updateCurrentSpeaker(speakerId, confidence, details.segments);
+                        this.updateCurrentSpeaker(speakerId, confidence, segments);
                         
                         const basicInfo = {
                             '主要识别用户': speakerId === 'unknown' ? '未识别到注册用户' : speakerId,
@@ -825,9 +827,9 @@ class VoiceprintApp {
                         const processingTime = details.processing_time || 0;
                         
                         if (speakerId === 'unknown') {
-                            this.ui.showRecognitionResult('warning', '识别结果', basicInfo, details.segments, processingTime);
+                            this.ui.showRecognitionResult('warning', '识别结果', basicInfo, segments, processingTime);
                         } else {
-                            this.ui.showRecognitionResult('success', '识别结果', basicInfo, details.segments, processingTime);
+                            this.ui.showRecognitionResult('success', '识别结果', basicInfo, segments, processingTime);
                         }
                     } else {
                         this.ui.showError('V2识别失败: ' + (result.error || '未知错误'));
@@ -925,9 +927,10 @@ class VoiceprintApp {
                 const details = result.details || {};
                 const speakerId = data.speaker_id;
                 const confidence = data.confidence.toFixed(1);
+                const segments = Array.isArray(details.segments) ? details.segments : (details.segments ? [details.segments] : []);
                 
                 // 更新说话人显示
-                this.updateCurrentSpeaker(speakerId, confidence, details.segments);
+                this.updateCurrentSpeaker(speakerId, confidence, segments);
                 
                 // 加载音频到时间轴播放器
                 this.loadTimelineAudio(audioBlob);
@@ -935,7 +938,7 @@ class VoiceprintApp {
                 // 显示时间轴和分段结果
                 const processingTime = details.processing_time || 0;
                 const basicInfo = {};
-                this.ui.showRecognitionResult('success', '识别结果', basicInfo, details.segments, processingTime);
+                this.ui.showRecognitionResult('success', '识别结果', basicInfo, segments, processingTime);
             } else {
                 this.ui.showError('Remote-V2识别失败: ' + (result.error || '未知错误'));
             }
